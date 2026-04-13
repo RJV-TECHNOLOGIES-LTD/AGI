@@ -10,6 +10,6 @@ class Settings {
             'anthropic_key'=>self::get('anthropic_key')?'***set***':'','default_model'=>self::get('default_model','anthropic'),
             'openai_model'=>self::get('openai_model','gpt-4.1-mini'),'anthropic_model'=>self::get('anthropic_model','claude-sonnet-4-20250514'),
             'rate_limit'=>(int)self::get('rate_limit',600),'audit_enabled'=>self::get('audit_enabled','1'),
-            'allowed_ips'=>self::get('allowed_ips','')];
+            'allowed_ips'=>self::get('allowed_ips',''),'log_retention_days'=>(int)self::get('log_retention_days',90)];
     }
 }

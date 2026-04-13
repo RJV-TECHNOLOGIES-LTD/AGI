@@ -26,4 +26,11 @@ class AuditLog {
         $p[]=$lim; $p[]=$off;
         return $wpdb->get_results($wpdb->prepare($sql,...$p), ARRAY_A)?:[];
     }
+    public static function cleanup(): int {
+        global $wpdb; $t=$wpdb->prefix.RJV_AGI_LOG_TABLE;
+        $days=(int)get_option('rjv_agi_log_retention_days',90);
+        if($days<1)return 0;
+        $cutoff=gmdate('Y-m-d H:i:s',strtotime("-{$days} days"));
+        return (int)$wpdb->query($wpdb->prepare("DELETE FROM {$t} WHERE timestamp<%s",$cutoff));
+    }
 }
