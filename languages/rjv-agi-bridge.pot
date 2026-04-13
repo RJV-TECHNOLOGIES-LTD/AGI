@@ -1,0 +1,61 @@
+# Copyright (C) 2026 RJV Technologies Ltd
+# This file is distributed under the same license as the RJV AGI Bridge package.
+msgid ""
+msgstr ""
+"Project-Id-Version: RJV AGI Bridge 2.1.0\n"
+"Report-Msgid-Bugs-To: https://rjvtechnologies.com\n"
+"POT-Creation-Date: 2026-04-13 00:00:00+00:00\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"PO-Revision-Date: 2026-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+
+#: rjv-agi-bridge.php
+msgid "RJV AGI Bridge"
+msgstr ""
+
+#: rjv-agi-bridge.php
+msgid "Enterprise AGI control interface for WordPress. Full site control via REST API + dual AI (OpenAI + Anthropic)."
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "AGI Bridge"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "Settings"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "Audit Log"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "AI Playground"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "System Status"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "API Key"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "Saved."
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "Copy"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "Send"
+msgstr ""
+
+#: includes/Admin/Dashboard.php
+msgid "Working..."
+msgstr ""

@@ -19,7 +19,11 @@ class Auth {
     }
     public static function tier1(\WP_REST_Request $r): bool { return self::check($r); }
     public static function tier2(\WP_REST_Request $r): bool { return self::check($r); }
-    public static function tier3(\WP_REST_Request $r): bool { return self::check($r); }
+    public static function tier3(\WP_REST_Request $r): bool {
+        if (!self::check($r)) return false;
+        AuditLog::log('tier3_access','auth',0,['route'=>$r->get_route(),'method'=>$r->get_method()],3);
+        return true;
+    }
     private static function ip(): string {
         foreach (['HTTP_CF_CONNECTING_IP','HTTP_X_FORWARDED_FOR','HTTP_X_REAL_IP','REMOTE_ADDR'] as $h) {
             if (!empty($_SERVER[$h])) { $ip = explode(',', sanitize_text_field(wp_unslash($_SERVER[$h])))[0];

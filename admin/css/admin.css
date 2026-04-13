@@ -1,1 +1,244 @@
-.rjv-agi-wrap{max-width:1400px}
+/* RJV AGI Bridge — Admin Stylesheet */
+.rjv-agi-wrap {
+  max-width: 1400px;
+}
+
+/* Dashboard Grid */
+.rjv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+/* Cards */
+.rjv-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  transition: box-shadow 0.2s ease;
+}
+
+.rjv-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.rjv-card-full {
+  grid-column: 1 / -1;
+}
+
+.rjv-card h2 {
+  border-bottom: 2px solid #2271b1;
+  padding-bottom: 8px;
+  margin-top: 0;
+  font-size: 1.15em;
+}
+
+/* API Key Display */
+.rjv-key-box {
+  background: #f0f0f0;
+  padding: 12px;
+  border-radius: 4px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.rjv-key-box code {
+  flex: 1;
+  word-break: break-all;
+  font-size: 13px;
+}
+
+/* Status Indicators */
+.rjv-status-healthy {
+  color: #00a32a;
+  font-weight: 600;
+}
+
+.rjv-status-error {
+  color: #d63638;
+  font-weight: 600;
+}
+
+.rjv-status-warning {
+  color: #dba617;
+  font-weight: 600;
+}
+
+/* AI Provider Status */
+.rjv-provider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.rjv-provider:last-child {
+  border-bottom: none;
+}
+
+.rjv-provider b {
+  text-transform: capitalize;
+}
+
+/* Stats */
+.rjv-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.rjv-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.rjv-stat-value {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: #1d2327;
+  line-height: 1.2;
+}
+
+.rjv-stat-label {
+  font-size: 12px;
+  color: #787c82;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Playground */
+.rjv-playground {
+  max-width: 800px;
+}
+
+.rjv-playground textarea {
+  width: 100%;
+  font-family: inherit;
+}
+
+.rjv-playground-output {
+  background: #f9f9f9;
+  padding: 16px;
+  border-radius: 4px;
+  margin-top: 16px;
+  border: 1px solid #e0e0e0;
+}
+
+.rjv-playground-output pre {
+  white-space: pre-wrap;
+  max-height: 500px;
+  overflow: auto;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.rjv-playground-meta {
+  font-size: 12px;
+  color: #666;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* Loading State */
+.rjv-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #787c82;
+  font-style: italic;
+}
+
+/* Settings Page */
+.rjv-settings-section {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.rjv-settings-section:last-child {
+  border-bottom: none;
+}
+
+/* Audit Log Enhancements */
+.rjv-audit-table .status-success {
+  color: #00a32a;
+}
+
+.rjv-audit-table .status-error {
+  color: #d63638;
+}
+
+.rjv-audit-table .tier-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.rjv-audit-table .tier-1 {
+  background: #e7f5ea;
+  color: #00a32a;
+}
+
+.rjv-audit-table .tier-2 {
+  background: #fef8ee;
+  color: #996800;
+}
+
+.rjv-audit-table .tier-3 {
+  background: #fcf0f1;
+  color: #d63638;
+}
+
+/* Notices */
+.rjv-notice {
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  border-left: 4px solid;
+}
+
+.rjv-notice-success {
+  background: #e7f5ea;
+  border-color: #00a32a;
+  color: #00450b;
+}
+
+.rjv-notice-error {
+  background: #fcf0f1;
+  border-color: #d63638;
+  color: #8a1116;
+}
+
+.rjv-notice-info {
+  background: #f0f6fc;
+  border-color: #2271b1;
+  color: #0a4b78;
+}
+
+/* Responsive */
+@media screen and (max-width: 782px) {
+  .rjv-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rjv-key-box {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rjv-stat-row {
+    gap: 12px;
+  }
+}

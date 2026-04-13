@@ -10,7 +10,7 @@ class AuditLog {
             'timestamp'=>current_time('mysql',true), 'agent_id'=>$details['agent_id']??'system',
             'action'=>sanitize_text_field($action), 'resource_type'=>sanitize_text_field($res_type),
             'resource_id'=>$res_id, 'details'=>wp_json_encode($details),
-            'ip_address'=>$_SERVER['REMOTE_ADDR']??'0.0.0.0', 'tier'=>$tier, 'status'=>$status,
+            'ip_address'=>(($ip=sanitize_text_field($_SERVER['REMOTE_ADDR']??''))&&filter_var($ip,FILTER_VALIDATE_IP))?$ip:'0.0.0.0', 'tier'=>$tier, 'status'=>$status,
             'execution_time_ms'=>$ms, 'tokens_used'=>$tokens, 'model_used'=>$model,
         ]);
     }
@@ -25,5 +25,12 @@ class AuditLog {
         $ws=implode(' AND ',$w); $sql="SELECT * FROM {$t} WHERE {$ws} ORDER BY id DESC LIMIT %d OFFSET %d";
         $p[]=$lim; $p[]=$off;
         return $wpdb->get_results($wpdb->prepare($sql,...$p), ARRAY_A)?:[];
+    }
+    public static function cleanup(): int {
+        global $wpdb; $t=$wpdb->prefix.RJV_AGI_LOG_TABLE;
+        $days=(int)get_option('rjv_agi_log_retention_days',90);
+        if($days<1)return 0;
+        $cutoff=gmdate('Y-m-d H:i:s',strtotime("-{$days} days"));
+        return (int)$wpdb->query($wpdb->prepare("DELETE FROM {$t} WHERE timestamp<%s",$cutoff));
     }
 }
