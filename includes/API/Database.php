@@ -11,10 +11,14 @@ class Database extends Base {
     }
     public function tables(\WP_REST_Request $r): \WP_REST_Response { global $wpdb;return $this->success(array_map(fn($t)=>['name'=>$t['Name'],'rows'=>(int)$t['Rows'],'size_mb'=>round(((int)$t['Data_length']+(int)$t['Index_length'])/1048576,2)],$wpdb->get_results("SHOW TABLE STATUS",ARRAY_A))); }
     public function query(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
-        $sql=$r->get_json_params()['sql']??'';$up=strtoupper(trim($sql));
+        $sql=$r->get_json_params()['sql']??'';
+        if(strlen($sql)>5000)return $this->error('Query too long (max 5000 chars)',403);
+        if(str_contains($sql,';'))return $this->error('Semicolons not allowed',403);
+        $sql=preg_replace('/--.*$/m','',$sql);$sql=preg_replace('#/\*.*?\*/#s','',$sql);$sql=trim($sql);
+        $up=strtoupper($sql);
         if(!str_starts_with($up,'SELECT'))return $this->error('Only SELECT allowed',403);
-        foreach(['DROP','DELETE','UPDATE','INSERT','ALTER','TRUNCATE','GRANT','CREATE'] as $kw) if(str_contains($up,$kw))return $this->error("Blocked: {$kw}",403);
-        global $wpdb;$this->log('db_query','database',0,['len'=>strlen($sql)],3);return $this->success($wpdb->get_results($sql,ARRAY_A));
+        foreach(['DROP','DELETE','UPDATE','INSERT','ALTER','TRUNCATE','GRANT','CREATE','UNION','EXEC','INTO OUTFILE','INTO DUMPFILE'] as $kw) if(str_contains($up,$kw))return $this->error("Blocked: {$kw}",403);
+        global $wpdb;$this->log('db_query','database',0,['len'=>strlen($sql),'hash'=>hash('sha256',$sql)],3);return $this->success($wpdb->get_results($sql,ARRAY_A));
     }
     public function optimize(\WP_REST_Request $r): \WP_REST_Response {
         global $wpdb;$tables=$wpdb->get_col("SHOW TABLES");foreach($tables as $t)$wpdb->query("OPTIMIZE TABLE `{$t}`");

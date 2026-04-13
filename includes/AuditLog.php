@@ -10,7 +10,7 @@ class AuditLog {
             'timestamp'=>current_time('mysql',true), 'agent_id'=>$details['agent_id']??'system',
             'action'=>sanitize_text_field($action), 'resource_type'=>sanitize_text_field($res_type),
             'resource_id'=>$res_id, 'details'=>wp_json_encode($details),
-            'ip_address'=>$_SERVER['REMOTE_ADDR']??'0.0.0.0', 'tier'=>$tier, 'status'=>$status,
+            'ip_address'=>(($ip=sanitize_text_field($_SERVER['REMOTE_ADDR']??''))&&filter_var($ip,FILTER_VALIDATE_IP))?$ip:'0.0.0.0', 'tier'=>$tier, 'status'=>$status,
             'execution_time_ms'=>$ms, 'tokens_used'=>$tokens, 'model_used'=>$model,
         ]);
     }
