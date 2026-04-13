@@ -1,0 +1,27 @@
+{
+    "name": "rjv-technologies/agi-bridge",
+    "description": "Enterprise AGI control interface for WordPress with dual AI support (OpenAI + Anthropic)",
+    "type": "wordpress-plugin",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "RJV Technologies Ltd",
+            "homepage": "https://rjvtechnologies.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "ext-json": "*",
+        "ext-mbstring": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "RJV_AGI_Bridge\\": "includes/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist"
+    },
+    "minimum-stability": "stable"
+}
