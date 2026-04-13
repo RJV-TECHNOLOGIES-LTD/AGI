@@ -17,9 +17,10 @@ class FileSystem extends Base {
         $ext=strtolower(pathinfo($f,PATHINFO_EXTENSION));$blocked=['php','phtml','php5','phar'];
         if(in_array($ext,$blocked))return $this->error(".{$ext} blocked",403);
         $ok=['css','js','html','json','svg','txt','md'];if(!in_array($ext,$ok))return $this->error(".{$ext} not allowed",403);
-        $dir=dirname($b.'/'.$f);if(!is_dir($dir))wp_mkdir_p($dir);$full=realpath($dir).'/'.basename($f);
-        if(!str_starts_with($full,$b))return $this->error('Invalid path',403);
-        if(file_exists($full)&&is_link($full))return $this->error('Symlinks not allowed',403);
+        $dir=dirname($b.'/'.$f);if(!is_dir($dir))wp_mkdir_p($dir);$rdir=realpath($dir);
+        if(!$rdir||!str_starts_with($rdir,$b))return $this->error('Invalid path',403);
+        $full=$rdir.'/'.basename($f);
+        if(is_link($full))return $this->error('Symlinks not allowed',403);
         file_put_contents($full,$c);
         $this->log('write_file','filesystem',0,['file'=>$f],3);return $this->success(['written'=>true,'size'=>strlen($c)]);
     }
