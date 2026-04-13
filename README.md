@@ -1,22 +1,24 @@
 # RJV AGI Bridge — WordPress Plugin
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://rjvtechnologies.com/agi-bridge)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://rjvtechnologies.com/agi-bridge)
 [![PHP](https://img.shields.io/badge/PHP-8.1%2B-purple.svg)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-6.4%2B-blue.svg)](https://wordpress.org)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
 
-Enterprise AGI control interface for WordPress. Full site control via REST API with dual AI support (OpenAI GPT + Anthropic Claude) and automatic failover.
+**Enterprise AGI Control Interface for WordPress** — A system-level control surface that allows the central AGI platform to securely, deterministically, and audibly operate WordPress environments while preserving strict governance, isolation, and human oversight.
 
 ---
 
 ## Table of Contents
 
+- [Overview](#overview)
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Authentication](#authentication)
 - [API Reference](#api-reference)
+- [Enterprise Modules](#enterprise-modules)
 - [Security](#security)
 - [Admin Dashboard](#admin-dashboard)
 - [Changelog](#changelog)
@@ -25,9 +27,22 @@ Enterprise AGI control interface for WordPress. Full site control via REST API w
 
 ---
 
+## Overview
+
+The RJV AGI Bridge is not a feature-based add-on, chatbot, or content generator. It is a **controlled execution interface** between WordPress and the central AGI platform of RJV Technologies Ltd. The plugin establishes:
+
+- **Persistent, secure, bidirectional communication** with the AGI platform
+- **Tenant identification and subscription validation** with capability gating
+- **Structured, validated operations** that preserve system integrity
+- **Full audit logging** with complete traceability
+- **Human-in-the-loop controls** for critical actions
+- **Multi-tenant isolation** for enterprise deployments
+
+---
+
 ## Features
 
-### 17 API Endpoint Groups
+### Core API (17 Endpoint Groups)
 
 | Group | Endpoints | Tier |
 |-------|-----------|------|
@@ -49,25 +64,114 @@ Enterprise AGI control interface for WordPress. Full site control via REST API w
 | Site Health | Health check, stats, audit log | T1 |
 | AI Content | Complete, generate post, SEO, rewrite | T1–T2 |
 
+### Enterprise Modules (NEW in v3.0)
+
+#### Platform Bridge
+- Secure bidirectional communication with central AGI platform
+- HMAC-signed request authentication
+- Tenant identification and subscription validation
+- Capability gating based on subscription plan
+- Architecture and workflow definitions from platform
+
+#### Content Versioning System
+- Full history of all content changes
+- Who initiated (AGI, human, agent, system)
+- Diffable comparisons between versions
+- One-click revert to any previous version
+- No silent mutations of content
+
+#### Design System Controller
+- Enforce consistent design tokens across the site
+- Style validation against constraints
+- Accessibility enforcement (WCAG compliance)
+- Heading hierarchy correction
+- Image alt text enforcement
+- Color contrast checking
+
+#### Event Streaming
+- Real-time WordPress event capture
+- Content events (create, update, delete, status change)
+- User events (login, logout, register, profile update)
+- Media events (upload, delete)
+- Plugin/theme events
+- Configurable batch streaming to platform
+
+#### Goal-Based Execution Engine
+- Define objectives with action sequences
+- Pre/during/post condition checking
+- Automatic checkpoint creation
+- Rollback on failure
+- Conditional action execution
+
+#### Approval Workflow System
+- Critical actions require human approval
+- Configurable per action type
+- Preview generation before execution
+- Email notifications to approvers
+- Expiration and auto-cleanup
+
+#### Agent Runtime (OpenClaw Model)
+- Deploy specialized task agents
+- Strict scope constraints
+- Limited tool access
+- Full audit trail
+- No privilege escalation
+- No agent-creates-agent
+
+#### Security Monitor
+- Vulnerability scanning
+- File integrity monitoring
+- Permission auditing
+- Anomaly detection
+- Malware signature scanning
+- Security score calculation
+
+#### Role-Based Access Control
+- WordPress role to AGI capability mapping
+- Custom role support
+- Resource-level permissions (own, own_draft)
+- Limited access with usage tracking
+- AGI boundary enforcement
+
+#### Multi-Tenant Isolation
+- Strict data isolation between tenants
+- Tenant-scoped options and transients
+- Query scoping
+- Context switching for admin
+- Multisite support
+
+#### External Integrations
+- API integration management
+- CRM connections
+- Payment gateway support
+- Encrypted credential storage
+- Connection testing
+- Execution tracking
+
+#### Webhook System
+- Incoming webhooks with signature validation
+- Outgoing webhooks for events
+- Custom headers support
+- Secret regeneration
+- Delivery tracking
+
+#### Performance Optimizer
+- Database analysis and optimization
+- Caching configuration audit
+- Asset optimization
+- Server configuration check
+- Performance scoring
+- Automated recommendations
+
 ### Dual AI Integration
 - **OpenAI** (GPT-4.1-mini default) and **Anthropic** (Claude Sonnet default)
-- Automatic failover: if primary provider is unavailable, falls back to secondary
+- Automatic failover: if primary provider fails, falls back to secondary
 - Configurable models, temperature, and token limits per request
 
 ### 3-Tier Authority System
 - **Tier 1 (Autonomous)** — Read operations. API key required.
 - **Tier 2 (Supervised)** — Write operations. API key required.
-- **Tier 3 (Approval Required)** — Destructive/sensitive operations. API key required + action logged with elevated audit trail.
-
-### Enterprise Security
-- Timing-safe API key comparison (`hash_equals`)
-- IP allowlist with Cloudflare, proxy, and direct IP support
-- Rate limiting (configurable, default 600/min) with SHA-256 key hashing
-- Immutable audit log with automatic rotation
-- SQL injection protection (SELECT-only, keyword blocklist, comment stripping)
-- File write protection (extension allowlist, path traversal prevention, symlink detection)
-- CSRF protection on admin forms
-- XSS-safe admin JavaScript
+- **Tier 3 (Approval Required)** — Destructive/sensitive operations. Approval workflow.
 
 ---
 
@@ -82,6 +186,7 @@ Enterprise AGI control interface for WordPress. Full site control via REST API w
 ### PHP Extensions
 - `json`
 - `mbstring`
+- `openssl` (for credential encryption)
 
 ---
 
@@ -111,6 +216,7 @@ Then activate in WordPress admin.
 
 Navigate to **AGI Bridge > Settings** in WordPress admin to configure:
 
+#### AI Provider Settings
 | Setting | Description | Default |
 |---------|-------------|---------|
 | OpenAI Key | Your OpenAI API key | — |
@@ -118,10 +224,27 @@ Navigate to **AGI Bridge > Settings** in WordPress admin to configure:
 | Default Provider | Primary AI provider | Anthropic |
 | OpenAI Model | OpenAI model to use | gpt-4.1-mini |
 | Anthropic Model | Anthropic model to use | claude-sonnet-4-20250514 |
+
+#### Security Settings
+| Setting | Description | Default |
+|---------|-------------|---------|
 | Rate Limit | Max API requests per minute | 600 |
-| Audit Logging | Enable/disable audit log | Enabled |
-| Log Retention | Days to keep audit entries | 90 |
 | IP Allowlist | Restrict API access by IP | Empty (allow all) |
+
+#### Platform Settings (Enterprise)
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Platform URL | Central AGI platform API URL | https://platform.rjvtechnologies.com/api/v1 |
+| Tenant ID | Your tenant identifier | — |
+| Tenant Secret | Your tenant authentication secret | — |
+
+#### Feature Toggles
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Event Streaming | Stream events to platform | Disabled |
+| Design System | Enforce design constraints | Disabled |
+| Performance Monitoring | Track performance metrics | Enabled |
+| Security Scanning | Automated security scans | Enabled |
 
 ---
 
@@ -134,228 +257,226 @@ curl -H "X-RJV-AGI-Key: YOUR_API_KEY" \
   https://yoursite.com/wp-json/rjv-agi/v1/health
 ```
 
-Your API key is generated automatically on activation and displayed on the dashboard. You can regenerate it in Settings.
-
 ---
 
 ## API Reference
 
 Base URL: `https://yoursite.com/wp-json/rjv-agi/v1/`
 
-### Health & Status
+### Enterprise Endpoints
 
-#### `GET /health`
-Returns system health information.
+#### Platform Status
+```
+GET /platform/status
+```
+Returns platform connection status and subscription details.
 
-```json
-{
-  "success": true,
-  "data": {
-    "status": "healthy",
-    "version": "2.1.0",
-    "wordpress": "6.7",
-    "php": "8.2.0",
-    "mysql": "8.0.36",
-    "ai": {
-      "openai": { "configured": true, "model": "gpt-4.1-mini" },
-      "anthropic": { "configured": true, "model": "claude-sonnet-4-20250514" }
-    },
-    "posts": 42,
-    "pages": 5,
-    "users": 3,
-    "comments": 120
-  }
+#### Capabilities
+```
+GET /platform/capabilities
+```
+Returns available capabilities and current usage.
+
+#### Content Versions
+```
+GET /versions/{type}/{id}
+```
+Get version history for content.
+
+```
+POST /versions/{version_id}/revert
+```
+Revert content to a specific version.
+
+```
+POST /versions/compare
+Body: { "version_a": 1, "version_b": 2 }
+```
+Compare two versions.
+
+#### Goal Execution
+```
+POST /goals/execute
+Body: {
+  "objective": "Update homepage and publish",
+  "actions": [
+    { "type": "update_page", "params": { "id": 1, "title": "New Title" } },
+    { "type": "update_post", "params": { "id": 1, "status": "publish" } }
+  ],
+  "conditions": {
+    "pre": [{ "type": "post_exists", "params": { "id": 1 } }]
+  },
+  "rollback_on_failure": true
 }
 ```
 
-#### `GET /health/stats`
-Returns today's activity statistics.
+```
+GET /goals/active
+```
+List active goal executions.
 
-#### `GET /audit-log`
-Query audit log entries with filters: `action`, `agent_id`, `tier`, `since`, `page`, `per_page`.
+#### Approval Workflow
+```
+GET /approvals
+```
+List pending approvals.
 
-### Posts
+```
+POST /approvals/{id}/approve
+```
+Approve a pending action.
 
-#### `GET /posts`
-List posts. Parameters: `per_page` (max 100), `page`, `status`, `search`.
+```
+POST /approvals/{id}/reject
+Body: { "reason": "Optional rejection reason" }
+```
 
-#### `POST /posts`
-Create a post. Body:
-```json
-{
-  "title": "My Post",
-  "content": "<p>HTML content</p>",
-  "status": "draft",
-  "excerpt": "Short description",
-  "categories": [1, 2],
-  "tags": ["tag1", "tag2"],
-  "featured_image_id": 123,
-  "meta": { "custom_field": "value" },
-  "seo": { "title": "SEO Title", "description": "Meta description", "focus_kw": "keyword" }
+#### Agent Runtime
+```
+GET /agents
+POST /agents
+Body: {
+  "name": "SEO Agent",
+  "type": "seo",
+  "scope": { "allowed_post_types": ["post", "page"] },
+  "tools": ["read_post", "update_seo", "ai_complete"],
+  "task": { "type": "optimize_seo", "params": {} }
 }
 ```
 
-#### `GET /posts/{id}`
-Get a single post with full content, meta, and SEO data.
-
-#### `PUT /posts/{id}`
-Update a post. Same body as create (all fields optional).
-
-#### `DELETE /posts/{id}`
-Delete a post. Body: `{ "force": true }` for permanent deletion.
-
-#### `POST /posts/bulk`
-Bulk operations. Body:
-```json
-{ "action": "publish|draft|trash|delete", "ids": [1, 2, 3] }
+```
+GET /agents/{agent_id}
+DELETE /agents/{agent_id}
+POST /agents/{agent_id}/execute
 ```
 
-### Pages
+#### Security
+```
+POST /security/scan
+```
+Run full security scan.
 
-#### `GET /pages` | `POST /pages` | `GET /pages/{id}` | `PUT /pages/{id}` | `DELETE /pages/{id}`
-Same as Posts but for pages. Additional fields: `parent`, `template`.
+```
+GET /security/status
+```
+Get security status summary.
 
-### Media
+#### Performance
+```
+GET /performance/analyze
+```
+Run performance analysis.
 
-#### `GET /media`
-List media attachments.
+```
+POST /performance/optimize
+```
+Optimize database.
 
-#### `POST /media`
-Upload a file (multipart form, field name: `file`).
-
-#### `POST /media/sideload`
-Download and attach from URL: `{ "url": "https://...", "filename": "photo.jpg", "alt": "Alt text" }`
-
-#### `DELETE /media/{id}`
-Delete a media attachment.
-
-### Users
-
-#### `GET /users` | `GET /users/{id}` | `PUT /users/{id}`
-User management. Update limited to `name` and `email`.
-
-### Options
-
-#### `GET /options`
-Get all whitelisted options.
-
-#### `PUT /options`
-Update writable options. Writable: `blogname`, `blogdescription`, `timezone_string`, `date_format`, `time_format`, `posts_per_page`, `page_on_front`, `page_for_posts`, `show_on_front`, `blog_public`.
-
-### Themes
-
-#### `GET /themes` | `POST /themes/activate` | `GET /themes/customizer` | `PUT /themes/customizer`
-
-### Plugins
-
-#### `GET /plugins` | `POST /plugins/toggle`
-Body: `{ "plugin": "plugin-dir/plugin-file.php", "action": "activate|deactivate" }`
-
-### Menus
-
-#### `GET /menus` | `GET /menus/{id}` | `POST /menus/{id}/items`
-
-### Widgets
-
-#### `GET /widgets`
-List sidebars with registered widgets.
-
-### SEO
-
-#### `GET /seo/audit`
-SEO audit summary: total published, missing titles/descriptions, score.
-
-#### `GET /seo/missing`
-Paginated list of posts missing SEO data. Parameters: `page`, `per_page`, `type` (all|title|description).
-
-#### `POST /seo/bulk-meta`
-Bulk update SEO metadata (Yoast + RankMath compatible):
-```json
-{ "items": [{ "id": 1, "title": "SEO Title", "description": "Meta desc" }] }
+#### Integrations
+```
+GET /integrations
+POST /integrations
 ```
 
-### Comments
-
-#### `GET /comments` | `POST /comments/{id}/approve` | `POST /comments/{id}/spam` | `DELETE /comments/{id}`
-
-### Taxonomies
-
-#### `GET /taxonomies` | `GET /taxonomies/{tax}/terms` | `POST /taxonomies/{tax}/terms`
-
-### Database
-
-#### `GET /database/tables`
-List all tables with row counts and sizes.
-
-#### `POST /database/query` ⚠️ Tier 3
-Execute read-only SQL. Body: `{ "sql": "SELECT * FROM wp_posts LIMIT 10" }`
-- Only `SELECT` statements allowed
-- Blocked keywords: DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE, GRANT, CREATE, UNION, EXEC
-- Max query length: 5000 characters
-- SQL comments stripped automatically
-
-#### `POST /database/optimize`
-Optimise all tables and clean expired transients.
-
-### FileSystem
-
-#### `GET /files/theme`
-List all files in the active theme.
-
-#### `POST /files/theme/read`
-Read a theme file: `{ "file": "style.css" }`
-
-#### `POST /files/theme/write` ⚠️ Tier 3
-Write a theme file. Allowed extensions: css, js, html, json, svg, txt, md.
-```json
-{ "file": "custom.css", "content": "body { color: red; }" }
+#### Webhooks
+```
+GET /webhooks
+POST /webhooks
 ```
 
-### Cron
-
-#### `GET /cron` | `POST /cron/schedule` | `POST /cron/clear`
-
-### AI Content Generation
-
-#### `POST /ai/complete`
-Send a message to AI:
-```json
-{
-  "message": "Your prompt here",
-  "system_prompt": "Optional system instructions",
-  "provider": "anthropic|openai",
-  "temperature": 0.3,
-  "max_tokens": 4096
-}
+#### Design System
+```
+GET /design/tokens
+PUT /design/tokens
+POST /design/validate-css
 ```
 
-#### `POST /ai/generate-post`
-Generate a blog post:
-```json
-{
-  "topic": "AI in Healthcare",
-  "tone": "professional",
-  "length": "1500 words",
-  "auto_create": true,
-  "title": "Optional custom title",
-  "provider": "anthropic"
-}
+---
+
+## Enterprise Modules
+
+### Content Versioning
+
+Every content change is tracked:
+
+```php
+// Automatic versioning on save
+$content_ops = RJV_AGI_Bridge\Content\ContentOperations::instance();
+$result = $content_ops->update('post', 123, [
+    'title' => 'Updated Title',
+    'content' => 'New content here',
+], [
+    'initiated_by' => 'admin@example.com',
+    'initiator_type' => 'human',
+]);
+
+// Revert to previous version
+$versions = RJV_AGI_Bridge\Content\VersionManager::instance();
+$versions->revert_to_version($version_id, 'admin', 'human');
 ```
 
-#### `POST /ai/generate-seo`
-Generate SEO metadata for a post:
-```json
-{ "post_id": 123, "auto_apply": true }
+### Goal Execution
+
+Execute complex multi-step operations:
+
+```php
+$goals = RJV_AGI_Bridge\Execution\GoalExecutor::instance();
+$result = $goals->execute([
+    'id' => 'goal_123',
+    'objective' => 'Publish seasonal content campaign',
+    'actions' => [
+        ['type' => 'create_post', 'params' => ['title' => 'Winter Sale', 'content' => '...']],
+        ['type' => 'upload_media', 'params' => ['url' => 'https://...']],
+        ['type' => 'apply_seo', 'params' => ['post_id' => 0, 'title' => 'SEO Title']],
+    ],
+    'conditions' => [
+        'pre' => [['type' => 'user_can', 'params' => ['capability' => 'edit_posts']]],
+        'post' => [['type' => 'post_status', 'params' => ['id' => 0, 'status' => 'draft']]],
+    ],
+    'rollback_on_failure' => true,
+]);
 ```
 
-#### `POST /ai/rewrite`
-Rewrite content:
-```json
-{ "content": "Text to rewrite", "style": "casual|professional|academic" }
+### Agent Deployment
+
+Deploy specialized agents:
+
+```php
+$agents = RJV_AGI_Bridge\Agent\AgentRuntime::instance();
+$result = $agents->deploy([
+    'name' => 'Content Optimizer',
+    'type' => 'content',
+    'scope' => [
+        'allowed_post_types' => ['post'],
+        'max_operations_per_execution' => 5,
+    ],
+    'tools' => ['read_post', 'update_post', 'ai_complete'],
+]);
+
+// Execute task with agent
+$agents->start($result['agent_id']);
+$agents->execute($result['agent_id'], [
+    'type' => 'read_post',
+    'params' => ['id' => 123],
+]);
 ```
 
-#### `GET /ai/status`
-Get AI provider configuration status.
+### Approval Workflows
+
+Critical actions require approval:
+
+```php
+$approvals = RJV_AGI_Bridge\Execution\ApprovalWorkflow::instance();
+
+// Submit for approval
+$result = $approvals->submit('delete_post', [
+    'id' => 123,
+    'force' => true,
+], 'api', 'agi');
+
+// Approve (from admin interface)
+$approvals->approve($result['approval_id'], get_current_user_id(), true);
+```
 
 ---
 
@@ -367,39 +488,43 @@ Get AI provider configuration status.
 - Uses SHA-256 hashed key for transient storage
 
 ### IP Allowlist
-- Configure allowed IPs in Settings (one per line)
-- Supports Cloudflare (`CF-Connecting-IP`), proxy (`X-Forwarded-For`, `X-Real-IP`), and direct connections
-- Leave empty to allow all IPs
+- Configure allowed IPs in Settings
+- Supports Cloudflare, proxy, and direct connections
 
 ### Audit Log
-- Every API action is logged with: timestamp, agent ID, action, resource, tier, status, tokens, latency, IP
+- Every API action logged with: timestamp, agent ID, action, resource, tier, status, tokens, latency, IP
 - Insert-only (no update/delete via API)
-- Automatic cleanup of entries older than retention period (default 90 days)
-- Queryable via API and viewable in admin dashboard
+- Automatic cleanup based on retention period
 
 ### File Security
-- Theme file writes restricted to safe extensions (css, js, html, json, svg, txt, md)
+- Theme file writes restricted to safe extensions
 - PHP/PHTML/PHAR files blocked
-- Path traversal protection with `realpath()` validation
-- Symlink detection and blocking
-- Maximum file size: 1MB
+- Path traversal protection
+- Symlink detection
 
 ### Database Security
 - Only SELECT queries allowed
-- Dangerous keywords blocked (DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE, GRANT, CREATE, UNION, EXEC)
-- SQL comments automatically stripped
-- Maximum query length enforced (5000 chars)
+- Dangerous keywords blocked
+- SQL comments stripped
+- Query length limits
+
+### Credential Encryption
+- Integration credentials encrypted with AES-256-CBC
+- Uses WordPress auth salts as encryption key
 
 ---
 
 ## Admin Dashboard
 
-The plugin provides four admin pages:
+The plugin provides admin pages:
 
-1. **Dashboard** — System status, today's stats, AI provider status, API key display
-2. **Settings** — Configure API keys, models, rate limits, IP allowlist, log retention
-3. **Audit Log** — Browse recent API activity with tier badges and status indicators
-4. **AI Playground** — Test AI completions directly from WordPress admin
+1. **Dashboard** — System status, stats, AI status, API key
+2. **Settings** — Configure all plugin options
+3. **Audit Log** — Browse API activity
+4. **AI Playground** — Test AI completions
+5. **Approvals** — Review pending actions
+6. **Security** — Security scan results
+7. **Performance** — Performance analysis
 
 ---
 
