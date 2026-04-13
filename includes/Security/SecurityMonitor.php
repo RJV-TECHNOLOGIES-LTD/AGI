@@ -389,7 +389,7 @@ final class SecurityMonitor {
         $hourly_avg = (int) $wpdb->get_var(
             "SELECT AVG(hourly_count) FROM (
                 SELECT COUNT(*) as hourly_count FROM {$log_table} 
-                WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                WHERE timestamp >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
                 GROUP BY HOUR(timestamp)
             ) as hourly"
         );

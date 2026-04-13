@@ -244,7 +244,8 @@ final class EventDispatcher {
         ], 5);
     }
 
-    public function on_user_logout(int $user_id): void {
+    public function on_user_logout(): void {
+        $user_id = get_current_user_id();
         $this->dispatch('user.logout', [
             'user_id' => $user_id,
         ], 3);

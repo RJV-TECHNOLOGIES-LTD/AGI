@@ -445,10 +445,15 @@ final class PerformanceOptimizer {
         );
         $optimized['orphaned_meta_cleaned'] = $deleted_meta;
 
-        // Optimize tables
+        // Optimize tables - validate table names match expected WordPress pattern
         $tables = $wpdb->get_col("SHOW TABLES");
+        $table_prefix = $wpdb->prefix;
         foreach ($tables as $table) {
-            $wpdb->query("OPTIMIZE TABLE `{$table}`");
+            // Only optimize tables that start with our WordPress prefix
+            // This prevents potential issues with foreign table names
+            if (strpos($table, $table_prefix) === 0 && preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+                $wpdb->query($wpdb->prepare("OPTIMIZE TABLE %i", $table));
+            }
         }
         $optimized['tables_optimized'] = count($tables);
 

@@ -62,14 +62,14 @@ final class WebhookManager {
             'methods' => 'POST',
             'callback' => [$this, 'handle_incoming'],
             'permission_callback' => '__return_true',
-        ]);
+    ]);
     }
 
     /**
      * Create a new webhook
      */
     public function create(array $config): array {
-        $webhook_id = 'wh_' . wp_generate_uuid4();
+        $webhook_id = 'webhook_' . wp_generate_uuid4();
         $secret = wp_generate_password(32, false);
 
         global $wpdb;
