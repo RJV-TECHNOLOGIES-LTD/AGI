@@ -9,7 +9,10 @@ class Installer {
         update_option('rjv_agi_version', RJV_AGI_VERSION);
         flush_rewrite_rules();
     }
-    public static function deactivate(): void { flush_rewrite_rules(); }
+    public static function deactivate(): void {
+        wp_clear_scheduled_hook('rjv_agi_log_cleanup');
+        flush_rewrite_rules();
+    }
     public static function maybe_upgrade(): void {
         $current = get_option('rjv_agi_version', '0.0.0');
         if (version_compare($current, RJV_AGI_VERSION, '>=')) return;
