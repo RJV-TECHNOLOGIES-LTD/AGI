@@ -344,8 +344,8 @@ class Dashboard {
         $is_connected = $platform->is_configured();
         $subscription = $is_connected ? $platform->validate_subscription() : null;
 
-        // Handle form submission
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_admin_referer('rjv_platform')) {
+        // Handle form submission - use isset check for better security
+        if (isset($_POST['submit']) && check_admin_referer('rjv_platform')) {
             if (isset($_POST['rjv_tenant_id'])) {
                 Settings::set('tenant_id', sanitize_text_field(wp_unslash($_POST['rjv_tenant_id'])));
             }
