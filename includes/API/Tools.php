@@ -100,7 +100,9 @@ class Tools extends Base {
         if($path==='') throw new \RuntimeException('package or path is required');
         $real=realpath($path); if($real===false||!is_readable($real)) throw new \RuntimeException('Invalid import path');
         $upload=wp_upload_dir(); $base=realpath((string)$upload['basedir']);
-        if($base===false||strpos($real,$base)!==0) throw new \RuntimeException('Import path must be inside uploads directory');
+        if($base===false) throw new \RuntimeException('Uploads directory unavailable');
+        $basePrefix=rtrim($base,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+        if($real!==$base && strpos($real,$basePrefix)!==0) throw new \RuntimeException('Import path must be inside uploads directory');
         $json=file_get_contents($real); if($json===false) throw new \RuntimeException('Failed reading import file');
         $decoded=json_decode($json,true); if(!is_array($decoded)) throw new \RuntimeException('Invalid import package');
         return $decoded;

@@ -118,7 +118,7 @@ class Users extends Base {
         $updated=get_user_by('ID',$id); if(!$updated) return $this->error('Not found',404);
         return $this->success(['updated'=>true,'user'=>$this->format_user($updated)]);
     }
-    private function apply_role_transition(int $user_id, string $target_role, string $reason): true|\WP_Error {
+    private function apply_role_transition(int $user_id, string $target_role, string $reason): bool|\WP_Error {
         global $wp_roles;
         if(!isset(($wp_roles?->roles ?? [])[$target_role])) return $this->error('Invalid role');
         $user=new \WP_User($user_id); if(!$user->exists()) return $this->error('Not found',404);

@@ -74,6 +74,10 @@ class Themes extends Base {
         $styles=get_posts(['post_type'=>'wp_global_styles','post_status'=>'publish,draft','posts_per_page'=>50]);
         return $this->success(array_map(fn(\WP_Post $p)=>['id'=>$p->ID,'slug'=>$p->post_name,'status'=>$p->post_status,'modified'=>$p->post_modified_gmt],$styles));
     }
+    /**
+     * Executes a theme mutation operation with rollback protection.
+     * If the operation fails or throws, the previous active theme is restored.
+     */
     private function with_theme_guard(callable $op) {
         $before_stylesheet=get_stylesheet();
         $before_template=get_template();
