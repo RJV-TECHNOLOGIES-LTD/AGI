@@ -24,7 +24,7 @@ Think of it like this: you're getting a super car from day one. The plugin coord
 
 * **Neither Claude nor GPT can use each other** - But this plugin orchestrates both as coordinated AI workers
 * **Intelligent Task Routing** - Tasks are automatically sent to the AI that handles them best
-* **Complete Site Control** - 17 API endpoint groups for full WordPress management
+* **Complete Site Control** - 19 API endpoint groups for full WordPress management
 * **Enterprise Security** - Immutable audit log, approval workflows, 3-tier authority system
 
 = The "Super Car" You Get From Day One =
@@ -32,7 +32,7 @@ Think of it like this: you're getting a super car from day one. The plugin coord
 With just your OpenAI and/or Anthropic API keys, you have:
 
 * **Multi-AI Coordination** - No other WordPress plugin coordinates Claude + GPT together
-* **17 API Endpoint Groups** - Posts, pages, media, SEO, users, themes, plugins, and more
+* **19 API Endpoint Groups** - Posts, pages, media, SEO, users, themes, plugins, tools, multisite awareness, and more
 * **Content Versioning** - Every change tracked, diffable, and reversible
 * **Approval Workflows** - Human-in-the-loop controls for critical actions
 * **Security & Audit** - Rate limiting, IP allowlisting, immutable audit log

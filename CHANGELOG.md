@@ -2,6 +2,24 @@
 
 All notable changes to the RJV AGI Bridge plugin will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Core default WordPress capability expansion:
+  - Posts/pages revision list + restore endpoints
+  - Media metadata update and attachment metadata regeneration endpoint
+  - Users lifecycle endpoints (create/delete) and role visibility endpoint
+  - Plugins install/update/delete operations
+  - Menus full CRUD for menus and menu items
+  - Taxonomy term update/delete operations
+  - Comments bulk moderation endpoint and generic status update endpoint
+  - Privacy tools request lifecycle endpoints (export/erase request create/list/delete)
+  - Multisite awareness endpoints for current site context and network site listing
+
+### Improved
+- Options API now covers a broader set of default WordPress settings (reading, writing, discussion, media, permalink, general/privacy-adjacent keys) with typed sanitization.
+- Theme API now exposes template parts, registered block patterns, and global styles visibility for modern WordPress default appearance features.
+
 ## [3.2.0] - 2026-04-14
 
 ### Added
