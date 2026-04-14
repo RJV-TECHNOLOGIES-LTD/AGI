@@ -429,11 +429,14 @@ final class PerformanceOptimizer {
 
         $optimized = [];
 
-        // Clean expired transients
+        // Clean expired transients (both timeout sentinel and value row)
         $deleted_transients = $wpdb->query(
-            "DELETE FROM {$wpdb->options} 
-             WHERE option_name LIKE '_transient_timeout_%' 
-             AND option_value < UNIX_TIMESTAMP()"
+            "DELETE a, b
+             FROM {$wpdb->options} a
+             LEFT JOIN {$wpdb->options} b
+               ON b.option_name = REPLACE(a.option_name, '_transient_timeout_', '_transient_')
+             WHERE a.option_name LIKE '_transient_timeout_%'
+               AND a.option_value < UNIX_TIMESTAMP()"
         );
         $optimized['transients_cleaned'] = $deleted_transients;
 

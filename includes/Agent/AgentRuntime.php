@@ -127,6 +127,10 @@ final class AgentRuntime {
 
         $agent = $this->get_agent($agent_id);
 
+        if (!$agent) {
+            return ['success' => false, 'error' => 'Agent record could not be persisted'];
+        }
+
         AuditLog::log('agent_deployed', 'agent', 0, [
             'agent_id' => $agent_id,
             'name' => $agent['name'],

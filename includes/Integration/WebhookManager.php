@@ -344,7 +344,7 @@ final class WebhookManager {
             $delivered   = $result_data['success'];
             $dead_letter = (!$delivered && $attempt >= self::MAX_ATTEMPTS);
 
-            $next_delay  = self::RETRY_DELAYS[min($attempt, count(self::RETRY_DELAYS) - 1)] ?? 86400;
+            $next_delay  = self::RETRY_DELAYS[min($attempt - 1, count(self::RETRY_DELAYS) - 1)] ?? 86400;
             $next_retry  = $dead_letter ? null : gmdate('Y-m-d H:i:s', time() + $next_delay);
 
             $wpdb->update($this->deliveries_table, [
