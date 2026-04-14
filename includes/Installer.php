@@ -73,6 +73,7 @@ class Installer {
             execution_time_ms INT UNSIGNED NULL,
             tokens_used INT UNSIGNED NULL,
             model_used VARCHAR(100) NULL,
+            entry_hmac VARCHAR(64) NULL,
             INDEX idx_ts (timestamp),
             INDEX idx_agent (agent_id),
             INDEX idx_action (action),
@@ -101,7 +102,7 @@ class Installer {
         // Integration management table
         IntegrationManager::create_table();
 
-        // Webhook management table
+        // Webhook management table (creates both webhooks + deliveries tables)
         WebhookManager::create_table();
     }
 
@@ -262,6 +263,27 @@ class Installer {
             // ── Provisioning orchestrator defaults ─────────────────────────
             'provision_auto_start'      => '0',   // Auto-provision on first activate
             'provision_services'        => ['tunnel', 'cloudflare', 'google', 'microsoft'],
+
+            // ── Auth: named API keys ────────────────────────────────────────
+            'named_keys'                => [],
+
+            // ── Auth: replay protection ─────────────────────────────────────
+            'replay_protection'         => '0',
+
+            // ── AI: response deduplication cache ────────────────────────────
+            'ai_response_cache_ttl'     => 300,   // seconds; 0 = disabled
+
+            // ── ThreatDetector defaults ─────────────────────────────────────
+            'threat_block_score'        => 70,
+            'threat_ban_score'          => 120,
+            'threat_ban_ttl'            => 3600,
+            'threat_detector_mode'      => 'enforce',
+
+            // ── Reliability alert thresholds ────────────────────────────────
+            'alert_availability_min'    => 99.0,
+            'alert_latency_p95_max'     => 2000,
+            'alert_burn_rate_1h_max'    => 14.4,
+            'alert_email'               => '',
         ];
 
         foreach ($defaults as $k => $v) {

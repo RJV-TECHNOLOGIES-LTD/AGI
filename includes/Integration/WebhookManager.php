@@ -12,6 +12,13 @@ use RJV_AGI_Bridge\AuditLog;
 final class WebhookManager {
     private static ?self $instance = null;
     private string $table_name;
+    private string $deliveries_table;
+
+    /** Retry schedule: seconds to wait before each attempt (attempt N = index N-1). */
+    private const RETRY_DELAYS = [60, 300, 1800, 7200, 86400]; // 1m 5m 30m 2h 24h
+
+    /** Maximum delivery attempts before a delivery is moved to dead-letter. */
+    private const MAX_ATTEMPTS = 5;
 
     public static function instance(): self {
         return self::$instance ??= new self();
@@ -19,8 +26,10 @@ final class WebhookManager {
 
     private function __construct() {
         global $wpdb;
-        $this->table_name = $wpdb->prefix . 'rjv_agi_webhooks';
+        $this->table_name      = $wpdb->prefix . 'rjv_agi_webhooks';
+        $this->deliveries_table = $wpdb->prefix . 'rjv_agi_webhook_deliveries';
         add_action('rest_api_init', [$this, 'register_webhook_endpoint']);
+        add_action('rjv_agi_webhook_retry', [$this, 'process_retry_queue']);
     }
 
     /**
@@ -28,6 +37,7 @@ final class WebhookManager {
      */
     public static function create_table(): void {
         global $wpdb;
+        self::create_deliveries_table();  // always ensure both tables exist
         $table = $wpdb->prefix . 'rjv_agi_webhooks';
         $charset = $wpdb->get_charset_collate();
 
@@ -48,6 +58,35 @@ final class WebhookManager {
             INDEX idx_type (type),
             INDEX idx_event (event),
             INDEX idx_active (active)
+        ) {$charset};";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
+    /**
+     * Create the webhook deliveries (retry queue + dead-letter) table.
+     */
+    public static function create_deliveries_table(): void {
+        global $wpdb;
+        $table   = $wpdb->prefix . 'rjv_agi_webhook_deliveries';
+        $charset = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS {$table} (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            delivery_id VARCHAR(100) NOT NULL UNIQUE,
+            webhook_id VARCHAR(100) NOT NULL,
+            payload LONGTEXT NOT NULL,
+            attempt_count TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            next_retry_at DATETIME NULL,
+            last_response LONGTEXT NULL,
+            last_http_status SMALLINT UNSIGNED NULL,
+            status ENUM('pending', 'in_progress', 'delivered', 'dead_letter') NOT NULL DEFAULT 'pending',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            delivered_at DATETIME NULL,
+            INDEX idx_status (status),
+            INDEX idx_webhook (webhook_id),
+            INDEX idx_retry (next_retry_at)
         ) {$charset};";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -193,26 +232,154 @@ final class WebhookManager {
         ]);
 
         $result = [
-            'success' => !is_wp_error($response),
-            'status' => is_wp_error($response) ? 0 : wp_remote_retrieve_response_code($response),
-            'error' => is_wp_error($response) ? $response->get_error_message() : null,
+            'success'     => !is_wp_error($response),
+            'status'      => is_wp_error($response) ? 0 : wp_remote_retrieve_response_code($response),
+            'error'       => is_wp_error($response) ? $response->get_error_message() : null,
         ];
 
         // Update stats
         global $wpdb;
         $wpdb->update($this->table_name, [
             'last_triggered' => current_time('mysql', true),
-            'trigger_count' => $webhook['trigger_count'] + 1,
-            'last_response' => wp_json_encode($result),
+            'trigger_count'  => $webhook['trigger_count'] + 1,
+            'last_response'  => wp_json_encode($result),
         ], ['webhook_id' => $webhook_id]);
 
         AuditLog::log('webhook_triggered', 'webhook', 0, [
             'webhook_id' => $webhook_id,
-            'success' => $result['success'],
-            'status' => $result['status'],
-        ], 1);
+            'success'    => $result['success'],
+            'status'     => $result['status'],
+        ], 1, $result['success'] ? 'success' : 'warning');
+
+        // ── On failure: enqueue for retry ─────────────────────────────────────
+        if (!$result['success'] || ($result['status'] >= 500 || $result['status'] === 0)) {
+            $this->enqueue_retry($webhook_id, $payload, $result);
+        }
 
         return $result;
+    }
+
+    /**
+     * Enqueue a failed delivery for automatic retry.
+     */
+    private function enqueue_retry(string $webhook_id, array $payload, array $initial_result): void {
+        global $wpdb;
+
+        $next_retry = gmdate('Y-m-d H:i:s', time() + (self::RETRY_DELAYS[0] ?? 60));
+
+        $wpdb->insert($this->deliveries_table, [
+            'delivery_id'     => 'dlv_' . wp_generate_uuid4(),
+            'webhook_id'      => $webhook_id,
+            'payload'         => wp_json_encode($payload),
+            'attempt_count'   => 1,
+            'next_retry_at'   => $next_retry,
+            'last_response'   => wp_json_encode($initial_result),
+            'last_http_status'=> (int) ($initial_result['status'] ?? 0),
+            'status'          => 'pending',
+        ]);
+    }
+
+    /**
+     * WP-cron callback: process the retry queue.
+     * Called on the 'rjv_agi_webhook_retry' hook (every 5 minutes).
+     */
+    public function process_retry_queue(): void {
+        global $wpdb;
+
+        $due = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$this->deliveries_table}
+             WHERE status = 'pending'
+               AND next_retry_at <= %s
+             ORDER BY next_retry_at ASC
+             LIMIT 50",
+            current_time('mysql', true)
+        ), ARRAY_A);
+
+        if (empty($due)) {
+            return;
+        }
+
+        foreach ($due as $delivery) {
+            // Mark in-progress to prevent concurrent reprocessing
+            $wpdb->update($this->deliveries_table,
+                ['status' => 'in_progress'],
+                ['delivery_id' => $delivery['delivery_id']]
+            );
+
+            $webhook = $this->get((string) $delivery['webhook_id']);
+            if (!$webhook || !$webhook['active']) {
+                $wpdb->update($this->deliveries_table,
+                    ['status' => 'dead_letter', 'last_response' => 'Webhook not found or inactive'],
+                    ['delivery_id' => $delivery['delivery_id']]
+                );
+                continue;
+            }
+
+            $payload   = (array) json_decode((string) $delivery['payload'], true);
+            $attempt   = (int) $delivery['attempt_count'] + 1;
+            $body      = wp_json_encode($payload);
+            $signature = hash_hmac('sha256', (string) $body, $webhook['secret']);
+
+            $response = wp_remote_post($webhook['url'], [
+                'timeout' => 30,
+                'headers' => [
+                    'Content-Type'         => 'application/json',
+                    'X-Webhook-ID'         => $webhook['webhook_id'],
+                    'X-Webhook-Signature'  => $signature,
+                    'X-Webhook-Timestamp'  => (string) time(),
+                    'X-Webhook-Attempt'    => (string) $attempt,
+                ],
+                'body' => $body,
+            ]);
+
+            $success     = !is_wp_error($response);
+            $http_status = $success ? wp_remote_retrieve_response_code($response) : 0;
+            $result_data = [
+                'success' => $success && $http_status >= 200 && $http_status < 300,
+                'status'  => $http_status,
+                'attempt' => $attempt,
+                'error'   => is_wp_error($response) ? $response->get_error_message() : null,
+            ];
+
+            $delivered   = $result_data['success'];
+            $dead_letter = (!$delivered && $attempt >= self::MAX_ATTEMPTS);
+
+            $next_delay  = self::RETRY_DELAYS[min($attempt, count(self::RETRY_DELAYS) - 1)] ?? 86400;
+            $next_retry  = $dead_letter ? null : gmdate('Y-m-d H:i:s', time() + $next_delay);
+
+            $wpdb->update($this->deliveries_table, [
+                'status'          => $dead_letter ? 'dead_letter' : ($delivered ? 'delivered' : 'pending'),
+                'attempt_count'   => $attempt,
+                'next_retry_at'   => $next_retry,
+                'last_response'   => wp_json_encode($result_data),
+                'last_http_status'=> $http_status,
+                'delivered_at'    => $delivered ? current_time('mysql', true) : null,
+            ], ['delivery_id' => $delivery['delivery_id']]);
+
+            AuditLog::log('webhook_retry_attempt', 'webhook', 0, [
+                'webhook_id'  => $webhook['webhook_id'],
+                'delivery_id' => $delivery['delivery_id'],
+                'attempt'     => $attempt,
+                'delivered'   => $delivered,
+                'dead_letter' => $dead_letter,
+            ], 1, $delivered ? 'success' : ($dead_letter ? 'error' : 'warning'));
+        }
+    }
+
+    /**
+     * Return delivery history for a webhook.
+     */
+    public function deliveries(string $webhook_id, int $limit = 50): array {
+        global $wpdb;
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$this->deliveries_table}
+             WHERE webhook_id = %s
+             ORDER BY created_at DESC
+             LIMIT %d",
+            $webhook_id,
+            $limit
+        ), ARRAY_A);
+        return is_array($rows) ? $rows : [];
     }
 
     /**

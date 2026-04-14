@@ -64,6 +64,12 @@ final class AuditLog {
                 'model_used'       => $model ? sanitize_text_field($model) : null,
             ]
         );
+
+        // Stamp HMAC chain on the inserted entry
+        $inserted_id = (int) $wpdb->insert_id;
+        if ($inserted_id > 0) {
+            self::stamp_hmac($inserted_id);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -326,6 +332,208 @@ final class AuditLog {
         }
 
         return $deleted;
+    }
+
+
+    // -------------------------------------------------------------------------
+    // HMAC tamper-evident chain
+    // -------------------------------------------------------------------------
+
+    /**
+     * Derive the HMAC-SHA256 signing key for the audit chain.
+     *
+     * Key = HMAC-SHA256( AUTH_KEY, "rjv-audit-chain-v1:{SITEURL}" )
+     * This binds the key to the specific WordPress installation.
+     */
+    private static function chain_key(): string {
+        $root = defined('AUTH_KEY') ? AUTH_KEY : (string) get_option('rjv_agi_chain_key_fallback', '');
+        if ($root === '') {
+            // Generate and persist a fallback key (only used when AUTH_KEY is unavailable)
+            $root = get_option('rjv_agi_chain_key_fallback', '');
+            if ($root === '') {
+                $root = bin2hex(random_bytes(32));
+                update_option('rjv_agi_chain_key_fallback', $root, false);
+            }
+        }
+        return hash_hmac('sha256', 'rjv-audit-chain-v1:' . (string) get_option('siteurl', ''), $root);
+    }
+
+    /**
+     * Compute the HMAC for a single entry row.
+     *
+     * Covers: id, timestamp, action, resource_type, resource_id, details,
+     *          ip_address, tier, status, tokens_used, model_used, prev_hmac
+     */
+    private static function compute_entry_hmac(array $row, string $prev_hmac): string {
+        $payload = implode('|', [
+            (string) ($row['id']            ?? ''),
+            (string) ($row['timestamp']     ?? ''),
+            (string) ($row['action']        ?? ''),
+            (string) ($row['resource_type'] ?? ''),
+            (string) ($row['resource_id']   ?? ''),
+            (string) ($row['details']       ?? ''),
+            (string) ($row['ip_address']    ?? ''),
+            (string) ($row['tier']          ?? ''),
+            (string) ($row['status']        ?? ''),
+            (string) ($row['tokens_used']   ?? ''),
+            (string) ($row['model_used']    ?? ''),
+            $prev_hmac,
+        ]);
+        return hash_hmac('sha256', $payload, self::chain_key());
+    }
+
+    /**
+     * Stamp the most recent audit entry with a chain HMAC.
+     * Called immediately after the INSERT in log().
+     *
+     * @param int $inserted_id  The auto-increment ID just inserted.
+     */
+    private static function stamp_hmac(int $inserted_id): void {
+        global $wpdb;
+        $table = $wpdb->prefix . RJV_AGI_LOG_TABLE;
+
+        // Fetch the row we just inserted
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$table} WHERE id = %d",
+            $inserted_id
+        ), ARRAY_A);
+
+        if (!$row) {
+            return;
+        }
+
+        // Get the immediately preceding entry's HMAC
+        $prev = $wpdb->get_var($wpdb->prepare(
+            "SELECT entry_hmac FROM {$table} WHERE id < %d ORDER BY id DESC LIMIT 1",
+            $inserted_id
+        ));
+        $prev_hmac = $prev ?: 'genesis';
+
+        $hmac = self::compute_entry_hmac($row, $prev_hmac);
+
+        $wpdb->update($table, ['entry_hmac' => $hmac], ['id' => $inserted_id], ['%s'], ['%d']);
+    }
+
+    /**
+     * Verify the integrity of the entire audit chain.
+     *
+     * Iterates every entry in ascending id order, recomputes its HMAC, and
+     * compares against the stored value.  Returns immediately on the first
+     * discrepancy.
+     *
+     * @return array{valid: bool, entries_checked: int, first_violation?: int, error?: string}
+     */
+    public static function verify_chain(): array {
+        global $wpdb;
+        $table = $wpdb->prefix . RJV_AGI_LOG_TABLE;
+
+        $prev_hmac = 'genesis';
+        $checked   = 0;
+
+        // Process in pages of 500 to keep memory bounded
+        $page = 0;
+        while (true) {
+            $offset = $page * 500;
+            $rows   = $wpdb->get_results(
+                "SELECT * FROM {$table} ORDER BY id ASC LIMIT 500 OFFSET {$offset}",
+                ARRAY_A
+            );
+
+            if (empty($rows)) {
+                break;
+            }
+
+            foreach ($rows as $row) {
+                if (!isset($row['entry_hmac']) || $row['entry_hmac'] === null) {
+                    // Entry predates chain support – skip but note
+                    $prev_hmac = 'genesis'; // treat as break in the old chain
+                    $checked++;
+                    continue;
+                }
+
+                $expected = self::compute_entry_hmac($row, $prev_hmac);
+                if (!hash_equals($expected, (string) $row['entry_hmac'])) {
+                    return [
+                        'valid'           => false,
+                        'entries_checked' => $checked,
+                        'first_violation' => (int) $row['id'],
+                        'error'           => 'HMAC mismatch – possible tampering detected at entry id ' . $row['id'],
+                    ];
+                }
+
+                $prev_hmac = (string) $row['entry_hmac'];
+                $checked++;
+            }
+
+            $page++;
+        }
+
+        return ['valid' => true, 'entries_checked' => $checked];
+    }
+
+    /**
+     * Export audit entries in JSON Lines format (one JSON object per line).
+     * This format is directly consumable by most SIEMs (Elastic, Splunk, etc.).
+     *
+     * @param array  $filters  Same filter keys accepted by query().
+     * @param string $dest     'file' (default) or 'stream'.
+     * @return array{success: bool, path?: string, url?: string, lines?: int, error?: string}
+     */
+    public static function export_jsonl(array $filters = [], string $dest = 'file'): array {
+        $upload = wp_upload_dir();
+        if (!empty($upload['error'])) {
+            return ['success' => false, 'error' => $upload['error']];
+        }
+
+        $dir = trailingslashit((string) $upload['basedir']) . 'rjv-agi-exports';
+        if (!is_dir($dir) && !wp_mkdir_p($dir)) {
+            return ['success' => false, 'error' => 'Cannot create export directory'];
+        }
+
+        // Place an index.php guard in the exports folder
+        $guard = $dir . '/index.php';
+        if (!file_exists($guard)) {
+            file_put_contents($guard, '<?php // silence');
+        }
+
+        $filename = 'audit-' . gmdate('Ymd-His') . '-' . substr(wp_generate_uuid4(), 0, 8) . '.jsonl';
+        $path     = $dir . '/' . $filename;
+        $url      = trailingslashit((string) $upload['baseurl']) . 'rjv-agi-exports/' . $filename;
+
+        $fh = fopen($path, 'wb');
+        if ($fh === false) {
+            return ['success' => false, 'error' => 'Cannot open export file for writing'];
+        }
+
+        // Paginate to avoid memory exhaustion on large logs
+        $page    = 1;
+        $written = 0;
+        $filters['per_page'] = 500;
+
+        do {
+            $filters['page'] = $page;
+            $result          = self::query($filters);
+            $entries         = $result['entries'] ?? [];
+
+            foreach ($entries as $entry) {
+                // Remove any internal column that the caller may not want
+                unset($entry['details_raw']);
+                fwrite($fh, json_encode($entry, JSON_UNESCAPED_UNICODE) . "\n");
+                $written++;
+            }
+
+            $page++;
+        } while ($page <= (int) ($result['pages'] ?? 1));
+
+        fclose($fh);
+
+        AuditLog::log('audit_export_jsonl', 'audit', 0, [
+            'filename' => $filename,
+            'lines'    => $written,
+            'filters'  => $filters,
+        ], 2);
+
+        return ['success' => true, 'path' => $path, 'url' => $url, 'lines' => $written];
     }
 
     // -------------------------------------------------------------------------

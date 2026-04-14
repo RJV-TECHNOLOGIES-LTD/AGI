@@ -4,6 +4,7 @@ namespace RJV_AGI_Bridge\AI;
 
 use RJV_AGI_Bridge\Settings;
 use RJV_AGI_Bridge\AuditLog;
+use RJV_AGI_Bridge\Security\ThreatDetector;
 
 /**
  * AI Router
@@ -17,6 +18,12 @@ use RJV_AGI_Bridge\AuditLog;
  *   – Estimated cost tracking (per-model token pricing)
  */
 final class Router {
+
+    /** Response cache TTL in seconds (0 = disabled). */
+    private const RESPONSE_CACHE_TTL = 300; // 5 minutes
+
+    /** Transient prefix for response cache. */
+    private const CACHE_PREFIX = 'rjv_ai_rc_';
 
     /** Token → estimated USD cost per 1,000 tokens (blended in/out). */
     private const COST_PER_1K = [
@@ -86,10 +93,40 @@ final class Router {
      * @return array{content: string, model: string, tokens: int, latency_ms: int, provider: string, cost_usd?: float, error?: string}
      */
     public function complete(string $system, string $message, array $opts = []): array {
-        // Monthly token budget check
+        // ── 0. Prompt injection scrubbing ─────────────────────────────────────
+        $sys_scrub = ThreatDetector::scrub_prompt($system);
+        $msg_scrub = ThreatDetector::scrub_prompt($message);
+
+        if ($sys_scrub['modified'] || $msg_scrub['modified']) {
+            AuditLog::log('ai_prompt_injection_scrubbed', 'ai', 0, [
+                'system_patterns' => $sys_scrub['patterns'],
+                'msg_patterns'    => $msg_scrub['patterns'],
+            ], 1, 'warning');
+        }
+
+        $system  = $sys_scrub['prompt'];
+        $message = $msg_scrub['prompt'];
+
+        // ── 1. Monthly token budget check ─────────────────────────────────────
         if (!$this->within_token_budget()) {
             AuditLog::log('ai_budget_exceeded', 'ai', 0, [], 1, 'error');
             return ['error' => 'Monthly AI token budget exceeded', 'content' => ''];
+        }
+
+        // ── 2. Response deduplication cache ──────────────────────────────────
+        $cache_ttl = (int) get_option('rjv_agi_ai_response_cache_ttl', self::RESPONSE_CACHE_TTL);
+        $cache_key = '';
+        if ($cache_ttl > 0 && empty($opts['no_cache'])) {
+            $cache_key = self::CACHE_PREFIX . substr(
+                hash('sha256', $system . '||' . $message . '||' . wp_json_encode($opts)),
+                0,
+                32
+            );
+            $cached = get_transient($cache_key);
+            if ($cached !== false && is_array($cached)) {
+                $cached['cached'] = true;
+                return $cached;
+            }
         }
 
         $preferred = sanitize_key((string) ($opts['provider'] ?? ''));
@@ -130,6 +167,12 @@ final class Router {
                 $this->circuit_record_success($provider_name);
                 $result['cost_usd'] = $this->estimate_cost($result['model'] ?? '', (int) ($result['tokens'] ?? 0));
                 $this->record_token_usage((int) ($result['tokens'] ?? 0));
+
+                // Store in response cache
+                if ($cache_key !== '') {
+                    set_transient($cache_key, $result, $cache_ttl);
+                }
+
                 return $result;
             }
 
