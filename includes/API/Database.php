@@ -112,7 +112,7 @@ class Database extends Base {
         $indexes = (array) $wpdb->get_results("SHOW INDEX FROM `{$name}`", ARRAY_A);
 
         // Row count and size
-        $status = $wpdb->get_row("SHOW TABLE STATUS LIKE '{$name}'", ARRAY_A);
+        $status = $wpdb->get_row($wpdb->prepare("SHOW TABLE STATUS LIKE %s", $name), ARRAY_A);
 
         $this->log('db_table_detail', 'database', 0, ['table' => $name]);
 

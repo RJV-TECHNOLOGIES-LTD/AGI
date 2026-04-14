@@ -76,6 +76,7 @@ final class Plugin {
              'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
              'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
              'API/WooCommerce', 'API/Forms', 'API/Cache', 'API/ACF', 'API/EmailMarketing',
+             'API/Schema',
              'Admin/Dashboard',
          ];
 
@@ -270,6 +271,7 @@ final class Plugin {
             new API\CloudflareManager(),
             new API\ExternalPlatforms(),
             new API\AutoProvision(),
+            new API\Schema(),
         ];
 
         foreach ($core_controllers as $controller) {
@@ -795,6 +797,19 @@ final class Plugin {
             return $result;
         }
 
+        // ── Idempotency key: replay cached response for duplicate POST/PUT/PATCH ─
+        $idempotency_key = sanitize_text_field((string) $request->get_header('X-Idempotency-Key'));
+        $method = strtoupper($request->get_method());
+        if ($idempotency_key !== '' && in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
+            $idem_transient = 'rjv_idem_' . substr(hash('sha256', $idempotency_key), 0, 32);
+            $cached = get_transient($idem_transient);
+            if (is_array($cached)) {
+                $response = new \WP_REST_Response($cached['body'], $cached['status']);
+                $response->header('X-Idempotency-Replayed', 'true');
+                return $response;
+            }
+        }
+
         // ── ThreatDetector: inspect every inbound API request ─────────────────
         $threat = ThreatDetector::inspect($request);
         if (!$threat['allowed']) {
@@ -915,6 +930,22 @@ final class Plugin {
         $route = $request->get_route();
         if (strpos($route, '/rjv-agi/v1/') !== 0) {
             return $response;
+        }
+
+        // ── Idempotency: store successful response for 24 h so duplicates replay ─
+        $idempotency_key = sanitize_text_field((string) $request->get_header('X-Idempotency-Key'));
+        $method = strtoupper($request->get_method());
+        if ($idempotency_key !== '' && in_array($method, ['POST', 'PUT', 'PATCH'], true)
+            && $response instanceof \WP_REST_Response
+            && $response->get_status() >= 200 && $response->get_status() < 300
+        ) {
+            $idem_transient = 'rjv_idem_' . substr(hash('sha256', $idempotency_key), 0, 32);
+            if (get_transient($idem_transient) === false) {
+                set_transient($idem_transient, [
+                    'body'   => $response->get_data(),
+                    'status' => $response->get_status(),
+                ], DAY_IN_SECONDS);
+            }
         }
 
         $response = ReliabilityMonitor::instance()->attach_headers($response);

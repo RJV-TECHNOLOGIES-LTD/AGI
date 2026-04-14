@@ -93,7 +93,7 @@ class ContentGen extends Base {
             return $this->error($result['error'], 502);
         }
 
-        return $this->success($result);
+        return $this->with_ai_meta($this->success($result), $result);
     }
 
     // -------------------------------------------------------------------------
@@ -152,7 +152,7 @@ class ContentGen extends Base {
             }
         }
 
-        return $this->success(array_merge($result, ['post_id' => $post_id]));
+        return $this->with_ai_meta($this->success(array_merge($result, ['post_id' => $post_id])), $result);
     }
 
     // -------------------------------------------------------------------------
@@ -179,7 +179,7 @@ class ContentGen extends Base {
         }
 
         $outline = json_decode($result['content'], true);
-        return $this->success(['outline' => $outline ?? $result['content'], 'tokens' => $result['tokens'] ?? 0]);
+        return $this->with_ai_meta($this->success(['outline' => $outline ?? $result['content'], 'tokens' => $result['tokens'] ?? 0]), $result);
     }
 
     // -------------------------------------------------------------------------
@@ -295,7 +295,7 @@ class ContentGen extends Base {
             return $this->error($result['error'], 502);
         }
 
-        return $this->success($result);
+        return $this->with_ai_meta($this->success($result), $result);
     }
 
     // -------------------------------------------------------------------------
@@ -341,7 +341,7 @@ class ContentGen extends Base {
             }
         }
 
-        return $this->success(array_merge($result, ['language' => $language, 'post_id' => $post_id]));
+        return $this->with_ai_meta($this->success(array_merge($result, ['language' => $language, 'post_id' => $post_id])), $result);
     }
 
     // -------------------------------------------------------------------------

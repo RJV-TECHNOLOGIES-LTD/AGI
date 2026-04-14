@@ -46,7 +46,7 @@ class Posts extends Base {
         return $this->success(['posts'=>$posts,'total'=>$q->found_posts,'pages'=>$q->max_num_pages]);
     }
     public function get(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
-        $p=get_post((int)$r['id']); if(!$p) return $this->error('Not found',404);
+        $id=(int)$r['id']; $p=get_post($id); if(!$p) return $this->not_found('post', $id);
         return $this->success($this->fmt($p, true));
     }
     public function create(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
@@ -61,10 +61,11 @@ class Posts extends Base {
         if(!empty($d['meta'])&&is_array($d['meta'])) foreach($d['meta'] as $k=>$v) update_post_meta($id,sanitize_key($k),sanitize_text_field($v));
         if(!empty($d['seo'])) $this->set_seo($id,$d['seo']);
         $this->log('create_post','post',$id,['title'=>$d['title']??''],2);
-        return $this->success($this->fmt(get_post($id),true),201);
+        $post = get_post($id);
+        return $this->success($this->with_links($this->fmt($post,true),'posts',$id,(string)get_permalink($id)),201);
     }
     public function update(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
-        $id=(int)$r['id']; $p=get_post($id); if(!$p) return $this->error('Not found',404);
+        $id=(int)$r['id']; $p=get_post($id); if(!$p) return $this->not_found('post', $id);
         $d=$r->get_json_params(); $u=['ID'=>$id];
         $map=['title'=>'post_title','content'=>'post_content','status'=>'post_status','excerpt'=>'post_excerpt','slug'=>'post_name'];
         foreach($map as $i=>$f) if(isset($d[$i])) $u[$f]=$i==='content'?wp_kses_post($d[$i]):sanitize_text_field((string)$d[$i]);
