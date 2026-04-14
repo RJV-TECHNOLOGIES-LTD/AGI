@@ -4,6 +4,7 @@ namespace RJV_AGI_Bridge\Bridge;
 
 use RJV_AGI_Bridge\AuditLog;
 use RJV_AGI_Bridge\Settings;
+use RJV_AGI_Bridge\Bridge\TenantIsolation;
 
 /**
  * Capability Gating System
@@ -108,34 +109,46 @@ final class CapabilityGate {
      */
     public function get_effective_capabilities(?string $environment = null): array {
         $environment = $environment ?: (function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production');
-        $base = $this->get_available();
-        $overrides = $this->get_environment_overrides();
-        $envOverride = is_array($overrides[$environment] ?? null) ? $overrides[$environment] : [];
+        return $this->resolve_context_capabilities([
+            'environment' => $environment,
+            'tenant_id' => TenantIsolation::instance()->get_tenant_id() ?? '',
+        ]);
+    }
 
-        if (!empty($envOverride['enabled']) && is_array($envOverride['enabled'])) {
-            $base['enabled'] = array_values(array_unique(array_merge(
-                (array) ($base['enabled'] ?? []),
-                array_map(static fn($v) => sanitize_key((string) $v), $envOverride['enabled'])
-            )));
+    /**
+     * Resolve capabilities using precedence: base(plan) < tenant < environment.
+     */
+    public function resolve_context_capabilities(array $context = []): array {
+        $environment = sanitize_key((string) ($context['environment'] ?? (function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production')));
+        $tenantId = sanitize_text_field((string) ($context['tenant_id'] ?? (TenantIsolation::instance()->get_tenant_id() ?? '')));
+        $plan = sanitize_key((string) ($context['plan'] ?? ((array) $this->get_available())['plan'] ?? 'default'));
+
+        $resolved = $this->get_available();
+        $provenance = ['base' => 'platform_plan', 'tenant' => false, 'environment' => false, 'plan' => $plan];
+
+        $planOverrides = get_option('rjv_agi_capability_plan_overrides', []);
+        $planRule = is_array($planOverrides) && is_array($planOverrides[$plan] ?? null) ? $planOverrides[$plan] : [];
+        if (!empty($planRule)) {
+            $resolved = $this->apply_override($resolved, $planRule);
+            $provenance['plan_override'] = true;
         }
 
-        if (!empty($envOverride['disabled']) && is_array($envOverride['disabled'])) {
-            $disabled = array_map(static fn($v) => sanitize_key((string) $v), $envOverride['disabled']);
-            $base['enabled'] = array_values(array_filter(
-                (array) ($base['enabled'] ?? []),
-                static fn($cap) => !in_array($cap, $disabled, true)
-            ));
+        $tenantOverrides = get_option('rjv_agi_capability_tenant_overrides', []);
+        if (is_array($tenantOverrides) && $tenantId !== '' && is_array($tenantOverrides[$tenantId] ?? null)) {
+            $resolved = $this->apply_override($resolved, $tenantOverrides[$tenantId]);
+            $provenance['tenant'] = true;
         }
 
-        if (!empty($envOverride['limits']) && is_array($envOverride['limits'])) {
-            $base['limits'] = array_merge((array) ($base['limits'] ?? []), $envOverride['limits']);
+        $envOverrides = $this->get_environment_overrides();
+        if (is_array($envOverrides[$environment] ?? null)) {
+            $resolved = $this->apply_override($resolved, $envOverrides[$environment]);
+            $provenance['environment'] = true;
         }
 
-        if (!empty($envOverride['features']) && is_array($envOverride['features'])) {
-            $base['features'] = array_merge((array) ($base['features'] ?? []), $envOverride['features']);
-        }
+        $resolved['_provenance'] = $provenance;
+        $resolved['_context'] = ['environment' => $environment, 'tenant_id' => $tenantId, 'plan' => $plan];
 
-        return $base;
+        return $resolved;
     }
 
     /**
@@ -181,6 +194,56 @@ final class CapabilityGate {
 
         update_option('rjv_agi_capability_overrides', $validated);
         return $validated;
+    }
+
+    public function get_plan_overrides(): array {
+        $value = get_option('rjv_agi_capability_plan_overrides', []);
+        return is_array($value) ? $value : [];
+    }
+
+    public function update_plan_overrides(array $overrides): array {
+        $validated = [];
+        foreach ($overrides as $plan => $rules) {
+            $plan = sanitize_key((string) $plan);
+            if ($plan === '' || !is_array($rules)) {
+                continue;
+            }
+            $validated[$plan] = [
+                'enabled' => array_values(array_filter(array_map(static fn($v) => sanitize_key((string) $v), (array) ($rules['enabled'] ?? [])))),
+                'disabled' => array_values(array_filter(array_map(static fn($v) => sanitize_key((string) $v), (array) ($rules['disabled'] ?? [])))),
+                'limits' => is_array($rules['limits'] ?? null) ? $rules['limits'] : [],
+                'features' => is_array($rules['features'] ?? null) ? $rules['features'] : [],
+            ];
+        }
+        update_option('rjv_agi_capability_plan_overrides', $validated);
+        return $validated;
+    }
+
+    private function apply_override(array $base, array $override): array {
+        if (!empty($override['enabled']) && is_array($override['enabled'])) {
+            $base['enabled'] = array_values(array_unique(array_merge(
+                (array) ($base['enabled'] ?? []),
+                array_map(static fn($v) => sanitize_key((string) $v), $override['enabled'])
+            )));
+        }
+
+        if (!empty($override['disabled']) && is_array($override['disabled'])) {
+            $disabled = array_map(static fn($v) => sanitize_key((string) $v), $override['disabled']);
+            $base['enabled'] = array_values(array_filter(
+                (array) ($base['enabled'] ?? []),
+                static fn($cap) => !in_array($cap, $disabled, true)
+            ));
+        }
+
+        if (!empty($override['limits']) && is_array($override['limits'])) {
+            $base['limits'] = array_merge((array) ($base['limits'] ?? []), $override['limits']);
+        }
+
+        if (!empty($override['features']) && is_array($override['features'])) {
+            $base['features'] = array_merge((array) ($base['features'] ?? []), $override['features']);
+        }
+
+        return $base;
     }
 
     /**

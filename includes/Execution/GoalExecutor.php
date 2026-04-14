@@ -5,6 +5,7 @@ namespace RJV_AGI_Bridge\Execution;
 use RJV_AGI_Bridge\AuditLog;
 use RJV_AGI_Bridge\Bridge\CapabilityGate;
 use RJV_AGI_Bridge\Content\VersionManager;
+use RJV_AGI_Bridge\Execution\ExecutionLedger;
 
 /**
  * Goal-Based Execution Engine
@@ -71,6 +72,7 @@ final class GoalExecutor {
             'objective' => $objective,
             'actions_count' => count($actions),
         ], 2);
+        $executionId = ExecutionLedger::instance()->start_execution('goal', (string) $goal_id, $goal, ['trace_id' => (string) ($goal['trace_id'] ?? '')]);
 
         $results = [];
         $failed_at = null;
@@ -81,6 +83,10 @@ final class GoalExecutor {
             // Create checkpoint before action
             $checkpoint = $this->create_checkpoint($action);
             $checkpoints[$index] = $checkpoint;
+            ExecutionLedger::instance()->append_event($executionId, 'action_checkpoint_created', [
+                'action_index' => $index,
+                'action_type' => (string) ($action['type'] ?? ''),
+            ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
 
             // Check if action is permitted
             if (!$this->gate->can($action['type'], $action)) {
@@ -90,12 +96,18 @@ final class GoalExecutor {
                     'error' => 'Action not permitted',
                     'action' => $action['type'],
                 ];
+                ExecutionLedger::instance()->append_event($executionId, 'action_denied', $results[$index], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id, 'status' => 'failed']);
                 break;
             }
 
             // Execute action
             $result = $this->execute_action($action);
             $results[$index] = $result;
+            ExecutionLedger::instance()->append_event($executionId, 'action_executed', [
+                'action_index' => $index,
+                'action_type' => (string) ($action['type'] ?? ''),
+                'result' => $result,
+            ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id, 'status' => (($result['success'] ?? false) ? 'recorded' : 'failed')]);
 
             // Update progress
             $this->active_goals[$goal_id]['actions_completed'] = $index + 1;
@@ -127,6 +139,11 @@ final class GoalExecutor {
                 'failed_at_action' => $failed_at,
                 'rolled_back' => $rollback_result['success'],
             ], 2, 'error');
+            ExecutionLedger::instance()->complete_execution($executionId, false, [
+                'goal_id' => $goal_id,
+                'failed_at_action' => $failed_at,
+                'rolled_back' => $rollback_result['success'],
+            ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
 
             return [
                 'success' => false,
@@ -150,6 +167,11 @@ final class GoalExecutor {
             'actions_completed' => count($results),
             'postconditions_satisfied' => $postcondition_check['satisfied'],
         ], 2);
+        ExecutionLedger::instance()->complete_execution($executionId, $failed_at === null, [
+            'goal_id' => $goal_id,
+            'actions_completed' => count($results),
+            'postconditions' => $postcondition_check,
+        ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
 
         return [
             'success' => $failed_at === null,

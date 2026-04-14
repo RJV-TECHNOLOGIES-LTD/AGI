@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace RJV_AGI_Bridge\Observability;
 
 use RJV_AGI_Bridge\Bridge\TenantIsolation;
+use RJV_AGI_Bridge\Governance\ProgramRegistry;
 
 /**
  * Enterprise observability and reliability monitor.
@@ -30,7 +31,6 @@ final class ReliabilityMonitor {
     public function attach_headers($response) {
         if (method_exists($response, 'header')) {
             $response->header('X-RJV-Trace-ID', $this->trace_id());
-            $response->header('X-RJV-API-Version', 'v1');
             $response->header('X-RJV-Governance', 'enforced');
         }
         return $response;
@@ -125,6 +125,116 @@ final class ReliabilityMonitor {
             'captured_at' => gmdate('c'),
             'trace_id' => $this->trace_id(),
         ];
+    }
+
+    public function anomaly_report(): array {
+        global $wpdb;
+        $table = $wpdb->prefix . RJV_AGI_LOG_TABLE;
+        $hourSince = gmdate('Y-m-d H:i:s', time() - HOUR_IN_SECONDS);
+        $daySince = gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS);
+
+        $hourTotal = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE timestamp >= %s", $hourSince));
+        $hourErrors = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE timestamp >= %s AND status = %s", $hourSince, 'error'));
+        $dayTotal = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE timestamp >= %s", $daySince));
+        $dayErrors = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE timestamp >= %s AND status = %s", $daySince, 'error'));
+
+        $hourRate = $hourTotal > 0 ? ($hourErrors / $hourTotal) * 100 : 0.0;
+        $dayRate = $dayTotal > 0 ? ($dayErrors / $dayTotal) * 100 : 0.0;
+        $ratio = $dayRate > 0 ? ($hourRate / $dayRate) : ($hourRate > 0 ? 999.0 : 1.0);
+
+        return [
+            'error_rate_last_hour_pct' => round($hourRate, 3),
+            'error_rate_24h_pct' => round($dayRate, 3),
+            'anomaly_ratio' => round($ratio, 3),
+            'anomaly_detected' => $ratio >= 2.0 && $hourTotal >= 20,
+            'trace_id' => $this->trace_id(),
+        ];
+    }
+
+    public function error_budget_status(): array {
+        $targets = ProgramRegistry::instance()->get_targets();
+        $slo = $this->slo_status();
+        $targetAvailability = (float) ($targets['availability_slo'] ?? 99.9);
+        $allowedErrorRate = max(0.0, 100.0 - $targetAvailability);
+        $actualErrorRate = (float) ($slo['error_rate_pct'] ?? 0.0);
+        $remaining = max(0.0, $allowedErrorRate - $actualErrorRate);
+
+        return [
+            'target_availability_pct' => $targetAvailability,
+            'allowed_error_rate_pct' => round($allowedErrorRate, 3),
+            'actual_error_rate_pct' => round($actualErrorRate, 3),
+            'remaining_error_budget_pct' => round($remaining, 3),
+            'burn_exceeded' => $actualErrorRate > $allowedErrorRate,
+            'trace_id' => $this->trace_id(),
+        ];
+    }
+
+    public function alerts(): array {
+        $drift = $this->drift_report();
+        $anomaly = $this->anomaly_report();
+        $budget = $this->error_budget_status();
+        $alerts = [];
+
+        if (($drift['drift_score'] ?? 0) > 0) {
+            $alerts[] = ['type' => 'config_drift', 'severity' => ($drift['drift_score'] > 10 ? 'high' : 'medium'), 'message' => 'Configuration drift detected'];
+        }
+        if (($anomaly['anomaly_detected'] ?? false) === true) {
+            $alerts[] = ['type' => 'error_anomaly', 'severity' => 'high', 'message' => 'Error-rate anomaly detected in last hour'];
+        }
+        if (($budget['burn_exceeded'] ?? false) === true) {
+            $alerts[] = ['type' => 'error_budget_burn', 'severity' => 'critical', 'message' => 'Error budget exhausted'];
+        }
+
+        return [
+            'active_alerts' => $alerts,
+            'count' => count($alerts),
+            'trace_id' => $this->trace_id(),
+        ];
+    }
+
+    public function remediation_playbooks(): array {
+        return [
+            'config_drift' => [
+                'steps' => ['Review drift report', 'Compare with baseline', 'Reconcile unauthorized option changes', 'Re-snapshot baseline'],
+            ],
+            'error_anomaly' => [
+                'steps' => ['Review last-hour failing actions', 'Throttle risky routes', 'Enable guarded approval mode', 'Rollback latest high-risk change'],
+            ],
+            'error_budget_burn' => [
+                'steps' => ['Enforce change freeze', 'Prioritize reliability fixes', 'Run targeted recovery plan', 'Lift freeze after sustained SLO recovery'],
+            ],
+        ];
+    }
+
+    public function release_gates_status(): array {
+        $thresholds = get_option('rjv_agi_release_gate_thresholds', []);
+        $thresholds = is_array($thresholds) ? $thresholds : [];
+        $scores = [
+            'contract_tests' => (int) get_option('rjv_agi_gate_contract_tests', 100),
+            'integration_tests' => (int) get_option('rjv_agi_gate_integration_tests', 100),
+            'e2e_tests' => (int) get_option('rjv_agi_gate_e2e_tests', 100),
+            'load_tests' => (int) get_option('rjv_agi_gate_load_tests', 100),
+            'chaos_tests' => (int) get_option('rjv_agi_gate_chaos_tests', 100),
+        ];
+        $map = [
+            'contract_tests' => 'contract_tests_min',
+            'integration_tests' => 'integration_tests_min',
+            'e2e_tests' => 'e2e_tests_min',
+            'load_tests' => 'load_tests_min',
+            'chaos_tests' => 'chaos_tests_min',
+        ];
+
+        $gates = [];
+        $allPass = true;
+        foreach ($map as $scoreKey => $thresholdKey) {
+            $min = (int) ($thresholds[$thresholdKey] ?? 80);
+            $score = (int) ($scores[$scoreKey] ?? 0);
+            $pass = $score >= $min;
+            $allPass = $allPass && $pass;
+            $gates[$scoreKey] = ['score' => $score, 'minimum' => $min, 'pass' => $pass];
+        }
+
+        return ['all_pass' => $allPass, 'gates' => $gates, 'trace_id' => $this->trace_id()];
     }
 
     private function percentile(array $numbers, int $percentile): int {

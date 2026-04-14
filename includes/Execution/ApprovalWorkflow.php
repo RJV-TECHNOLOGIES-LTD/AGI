@@ -126,6 +126,11 @@ final class ApprovalWorkflow {
                 'required_role' => 'administrator',
                 'expires_in' => 6 * HOUR_IN_SECONDS,
             ],
+            'policy_escalation_request' => [
+                'requires_approval' => true,
+                'required_role' => 'administrator',
+                'expires_in' => 2 * HOUR_IN_SECONDS,
+            ],
         ];
     }
 
@@ -442,6 +447,18 @@ final class ApprovalWorkflow {
                 ];
                 $preview['risks'][] = 'Guardrail-protected API request requires explicit execution handoff';
                 break;
+
+            case 'policy_escalation_request':
+                $preview['summary'] = 'Execute policy-escalated request';
+                $preview['details'] = [
+                    'method' => sanitize_text_field((string) ($action_data['method'] ?? '')),
+                    'route' => sanitize_text_field((string) ($action_data['route'] ?? '')),
+                    'trace_id' => sanitize_text_field((string) ($action_data['trace_id'] ?? '')),
+                    'rule_id' => sanitize_text_field((string) ($action_data['rule_id'] ?? '')),
+                    'policy_reason' => sanitize_text_field((string) ($action_data['policy_reason'] ?? '')),
+                ];
+                $preview['risks'][] = 'Escalation-level operation requires administrative sign-off and replay context';
+                break;
         }
 
         return $preview;
@@ -497,6 +514,15 @@ final class ApprovalWorkflow {
                     'approved' => true,
                     'handoff_required' => true,
                     'message' => 'Request approved. Re-submit original request with approval context.',
+                ];
+
+            case 'policy_escalation_request':
+                return [
+                    'success' => true,
+                    'approved' => true,
+                    'handoff_required' => true,
+                    'escalated' => true,
+                    'message' => 'Escalated request approved. Re-submit original request with approval context.',
                 ];
 
             default:

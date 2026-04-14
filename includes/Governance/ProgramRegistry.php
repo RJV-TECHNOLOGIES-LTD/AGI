@@ -82,15 +82,7 @@ final class ProgramRegistry {
     }
 
     public function get_contract(): array {
-        return [
-            'api_version' => 'v1',
-            'compatibility_policy' => 'Backward-compatible additive changes only within major version',
-            'deprecation_policy' => [
-                'notice_days' => 90,
-                'sunset_header' => true,
-                'replacement_required' => true,
-            ],
-        ];
+        return ContractManager::instance()->get_contract();
     }
 
     public function list_milestones(): array {
@@ -135,5 +127,56 @@ final class ProgramRegistry {
         TenantIsolation::instance()->set_option('rjv_agi_program_milestones', $milestones);
 
         return ['success' => true, 'milestone' => $record];
+    }
+
+    public function architecture_audit(): array {
+        $route_count = 0;
+        $routes_by_prefix = [];
+        if (function_exists('rest_get_server')) {
+            $server = rest_get_server();
+            if ($server && method_exists($server, 'get_routes')) {
+                $routes = $server->get_routes();
+                $route_count = count($routes);
+                foreach (array_keys($routes) as $route) {
+                    if (strpos($route, '/rjv-agi/v1/') !== 0) {
+                        continue;
+                    }
+                    $parts = explode('/', trim($route, '/'));
+                    $prefix = $parts[2] ?? 'root';
+                    $routes_by_prefix[$prefix] = ($routes_by_prefix[$prefix] ?? 0) + 1;
+                }
+            }
+        }
+
+        $module_files = $this->module_file_inventory();
+
+        return [
+            'generated_at' => gmdate('c'),
+            'namespace' => 'rjv-agi/v1',
+            'api_routes_registered' => $route_count,
+            'route_groups' => $routes_by_prefix,
+            'module_inventory' => $module_files,
+            'code_paths' => [
+                'bootstrap' => 'rjv-agi-bridge.php -> includes/Plugin.php',
+                'api_dispatch' => 'Plugin::pre_dispatch -> PolicyEngine/CapabilityGate -> API controller callbacks -> Plugin::post_dispatch',
+                'upgrade_path' => 'Installer::maybe_upgrade -> UpgradeSafety -> create_tables/set_defaults',
+                'execution_path' => 'GoalExecutor/AgentRuntime/ApprovalWorkflow -> ExecutionLedger -> AuditLog',
+            ],
+        ];
+    }
+
+    private function module_file_inventory(): array {
+        $base = trailingslashit(RJV_AGI_PLUGIN_DIR . 'includes');
+        $dirs = ['API', 'Bridge', 'Execution', 'Governance', 'Security', 'Observability', 'Integration', 'Content', 'Agent', 'AI', 'Performance', 'Admin', 'Design', 'Events'];
+        $inventory = [];
+        foreach ($dirs as $dir) {
+            $path = $base . $dir;
+            if (!is_dir($path)) {
+                continue;
+            }
+            $files = glob($path . '/*.php');
+            $inventory[$dir] = is_array($files) ? count($files) : 0;
+        }
+        return $inventory;
     }
 }

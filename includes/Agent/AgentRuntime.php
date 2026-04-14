@@ -4,6 +4,7 @@ namespace RJV_AGI_Bridge\Agent;
 
 use RJV_AGI_Bridge\AuditLog;
 use RJV_AGI_Bridge\Bridge\CapabilityGate;
+use RJV_AGI_Bridge\Execution\ExecutionLedger;
 
 /**
  * Agent Execution Framework (OpenClaw Model)
@@ -131,6 +132,11 @@ final class AgentRuntime {
             'name' => $agent['name'],
             'type' => $agent['type'],
         ], 2);
+        $executionId = ExecutionLedger::instance()->start_execution('agent', $agent_id, [
+            'event' => 'agent_deployed',
+            'agent' => $agent,
+        ]);
+        ExecutionLedger::instance()->complete_execution($executionId, true, ['agent_id' => $agent_id], ['entity_type' => 'agent', 'entity_id' => $agent_id]);
 
         return [
             'success' => true,
@@ -206,6 +212,7 @@ final class AgentRuntime {
 
         // Execute task
         $start = microtime(true);
+        $executionId = ExecutionLedger::instance()->start_execution('agent_task', $agent_id, ['task' => $task]);
         try {
             $result = $this->execute_agent_task($agent, $task);
             $duration = (int) ((microtime(true) - $start) * 1000);
@@ -223,6 +230,12 @@ final class AgentRuntime {
                 'success' => $result['success'],
                 'duration_ms' => $duration,
             ], 1);
+            ExecutionLedger::instance()->append_event($executionId, 'task_executed', [
+                'task_type' => $task['type'] ?? 'unknown',
+                'duration_ms' => $duration,
+                'success' => (bool) ($result['success'] ?? false),
+            ], ['entity_type' => 'agent_task', 'entity_id' => $agent_id]);
+            ExecutionLedger::instance()->complete_execution($executionId, (bool) ($result['success'] ?? false), $result, ['entity_type' => 'agent_task', 'entity_id' => $agent_id]);
 
             return $result;
 
@@ -231,6 +244,7 @@ final class AgentRuntime {
                 'task' => $task,
                 'error' => $e->getMessage(),
             ]);
+            ExecutionLedger::instance()->complete_execution($executionId, false, ['error' => $e->getMessage()], ['entity_type' => 'agent_task', 'entity_id' => $agent_id]);
 
             return ['success' => false, 'error' => $e->getMessage()];
         }
@@ -284,6 +298,8 @@ final class AgentRuntime {
             'agent_id' => $agent_id,
             'reason' => $reason,
         ], 2);
+        $executionId = ExecutionLedger::instance()->start_execution('agent', $agent_id, ['event' => 'agent_stopped', 'reason' => $reason]);
+        ExecutionLedger::instance()->complete_execution($executionId, true, ['agent_id' => $agent_id, 'reason' => $reason], ['entity_type' => 'agent', 'entity_id' => $agent_id]);
 
         return ['success' => true];
     }

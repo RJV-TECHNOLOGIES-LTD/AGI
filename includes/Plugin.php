@@ -11,14 +11,18 @@ use RJV_AGI_Bridge\Design\DesignSystemController;
 use RJV_AGI_Bridge\Events\EventDispatcher;
 use RJV_AGI_Bridge\Execution\GoalExecutor;
 use RJV_AGI_Bridge\Execution\ApprovalWorkflow;
+use RJV_AGI_Bridge\Execution\ExecutionLedger;
 use RJV_AGI_Bridge\Agent\AgentRuntime;
 use RJV_AGI_Bridge\Security\SecurityMonitor;
 use RJV_AGI_Bridge\Security\AccessControl;
+use RJV_AGI_Bridge\Security\ComplianceManager;
 use RJV_AGI_Bridge\Integration\IntegrationManager;
 use RJV_AGI_Bridge\Integration\WebhookManager;
 use RJV_AGI_Bridge\Performance\PerformanceOptimizer;
 use RJV_AGI_Bridge\Governance\ProgramRegistry;
 use RJV_AGI_Bridge\Governance\PolicyEngine;
+use RJV_AGI_Bridge\Governance\ContractManager;
+use RJV_AGI_Bridge\Governance\UpgradeSafety;
 use RJV_AGI_Bridge\Observability\ReliabilityMonitor;
 
 /**
@@ -42,14 +46,18 @@ final class Plugin {
     private ?EventDispatcher $events = null;
     private ?GoalExecutor $goals = null;
     private ?ApprovalWorkflow $approvals = null;
+    private ?ExecutionLedger $ledger = null;
     private ?AgentRuntime $agents = null;
     private ?SecurityMonitor $security = null;
     private ?AccessControl $access = null;
+    private ?ComplianceManager $compliance = null;
     private ?IntegrationManager $integrations = null;
     private ?WebhookManager $webhooks = null;
     private ?PerformanceOptimizer $performance = null;
     private ?ProgramRegistry $program = null;
     private ?PolicyEngine $policy = null;
+    private ?ContractManager $contract = null;
+    private ?UpgradeSafety $upgrade_safety = null;
     private ?ReliabilityMonitor $reliability = null;
 
     public static function instance(): self {
@@ -74,13 +82,14 @@ final class Plugin {
             'Content/VersionManager', 'Content/ContentOperations',
             'Design/DesignSystemController',
             'Events/EventDispatcher',
-            'Execution/GoalExecutor', 'Execution/ApprovalWorkflow',
-            'Agent/AgentRuntime',
-            'Security/SecurityMonitor', 'Security/AccessControl',
-            'Integration/IntegrationManager', 'Integration/WebhookManager',
-            'Performance/PerformanceOptimizer',
-            'Governance/ProgramRegistry', 'Governance/PolicyEngine',
-            'Observability/ReliabilityMonitor',
+             'Execution/GoalExecutor', 'Execution/ApprovalWorkflow',
+             'Execution/ExecutionLedger',
+             'Agent/AgentRuntime',
+             'Security/SecurityMonitor', 'Security/AccessControl', 'Security/ComplianceManager',
+             'Integration/IntegrationManager', 'Integration/WebhookManager',
+             'Performance/PerformanceOptimizer',
+             'Governance/ProgramRegistry', 'Governance/PolicyEngine', 'Governance/ContractManager', 'Governance/UpgradeSafety',
+             'Observability/ReliabilityMonitor',
         ];
 
         $all_files = array_merge($core_files, $enterprise_files);
@@ -129,14 +138,18 @@ final class Plugin {
         $this->events = EventDispatcher::instance();
         $this->goals = GoalExecutor::instance();
         $this->approvals = ApprovalWorkflow::instance();
+        $this->ledger = ExecutionLedger::instance();
         $this->agents = AgentRuntime::instance();
         $this->security = SecurityMonitor::instance();
         $this->access = AccessControl::instance();
+        $this->compliance = ComplianceManager::instance();
         $this->integrations = IntegrationManager::instance();
         $this->webhooks = WebhookManager::instance();
         $this->performance = PerformanceOptimizer::instance();
         $this->program = ProgramRegistry::instance();
         $this->policy = PolicyEngine::instance();
+        $this->contract = ContractManager::instance();
+        $this->upgrade_safety = UpgradeSafety::instance();
         $this->reliability = ReliabilityMonitor::instance();
     }
 
@@ -611,11 +624,15 @@ final class Plugin {
         }
 
         if (($policy['requires_approval'] ?? false) === true) {
-            $approval = ApprovalWorkflow::instance()->submit('policy_guardrail_request', [
+            $actionType = (($policy['escalated'] ?? false) === true) ? 'policy_escalation_request' : 'policy_guardrail_request';
+            $approval = ApprovalWorkflow::instance()->submit($actionType, [
                 'route' => $route,
                 'method' => $request->get_method(),
                 'params' => $request->get_json_params(),
                 'trace_id' => $trace_id,
+                'rule_id' => (string) ($policy['rule_id'] ?? ''),
+                'rule_type' => (string) ($policy['rule_type'] ?? ''),
+                'policy_reason' => (string) ($policy['reason'] ?? ''),
             ], 'api', 'agi');
 
             return new \WP_REST_Response([
@@ -644,7 +661,8 @@ final class Plugin {
             return $response;
         }
 
-        return ReliabilityMonitor::instance()->attach_headers($response);
+        $response = ReliabilityMonitor::instance()->attach_headers($response);
+        return ContractManager::instance()->attach_headers($response, $route, (string) $request->get_method());
     }
 
     /**
@@ -694,7 +712,7 @@ final class Plugin {
             return false;
         }
 
-        if (($item['action_type'] ?? '') !== 'policy_guardrail_request') {
+        if (!in_array((string) ($item['action_type'] ?? ''), ['policy_guardrail_request', 'policy_escalation_request'], true)) {
             return false;
         }
 
@@ -779,6 +797,14 @@ final class Plugin {
 
     public function policy(): PolicyEngine {
         return $this->policy ?? PolicyEngine::instance();
+    }
+
+    public function contract(): ContractManager {
+        return $this->contract ?? ContractManager::instance();
+    }
+
+    public function upgrade_safety(): UpgradeSafety {
+        return $this->upgrade_safety ?? UpgradeSafety::instance();
     }
 
     public function reliability(): ReliabilityMonitor {
