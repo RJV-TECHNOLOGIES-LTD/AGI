@@ -73,6 +73,7 @@ final class Plugin {
             'API/Options', 'API/Themes', 'API/Plugins', 'API/Menus', 'API/Widgets',
              'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
              'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
+             'API/WooCommerce', 'API/Forms', 'API/Cache', 'API/ACF', 'API/EmailMarketing',
              'Admin/Dashboard',
          ];
 
@@ -221,6 +222,11 @@ final class Plugin {
             new API\Tools(),
             new API\Sites(),
             new API\EnterpriseControl(),
+            new API\WooCommerce(),
+            new API\Forms(),
+            new API\Cache(),
+            new API\ACF(),
+            new API\EmailMarketing(),
         ];
 
         foreach ($core_controllers as $controller) {
