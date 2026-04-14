@@ -31,7 +31,8 @@ class SEO extends Base {
             ['methods' => 'PUT', 'callback' => [$this, 'update_post_seo'], 'permission_callback' => [Auth::class, 'tier2']],
         ]);
         register_rest_route($this->namespace, '/seo/site', [
-            ['methods' => 'GET', 'callback' => [$this, 'site_seo'], 'permission_callback' => [Auth::class, 'tier1']],
+            ['methods' => 'GET',       'callback' => [$this, 'site_seo'],        'permission_callback' => [Auth::class, 'tier1']],
+            ['methods' => 'PUT,PATCH', 'callback' => [$this, 'update_site_seo'], 'permission_callback' => [Auth::class, 'tier2']],
         ]);
         register_rest_route($this->namespace, '/seo/audit', [
             ['methods' => 'GET', 'callback' => [$this, 'audit'], 'permission_callback' => [Auth::class, 'tier1']],
@@ -50,6 +51,35 @@ class SEO extends Base {
         ]);
         register_rest_route($this->namespace, '/seo/sitemap', [
             ['methods' => 'POST', 'callback' => [$this, 'regenerate_sitemap'], 'permission_callback' => [Auth::class, 'tier2']],
+        ]);
+
+        // Redirects (Yoast Premium / Rank Math)
+        register_rest_route($this->namespace, '/seo/redirects', [
+            ['methods' => 'GET',  'callback' => [$this, 'list_redirects'],  'permission_callback' => [Auth::class, 'tier1'],
+             'args' => ['per_page' => ['default' => 50], 'page' => ['default' => 1]]],
+            ['methods' => 'POST', 'callback' => [$this, 'create_redirect'], 'permission_callback' => [Auth::class, 'tier2']],
+        ]);
+        register_rest_route($this->namespace, '/seo/redirects/(?P<id>\d+)', [
+            ['methods' => 'PUT,PATCH', 'callback' => [$this, 'update_redirect'], 'permission_callback' => [Auth::class, 'tier2']],
+            ['methods' => 'DELETE',    'callback' => [$this, 'delete_redirect'], 'permission_callback' => [Auth::class, 'tier3']],
+        ]);
+
+        // Social / Open Graph settings
+        register_rest_route($this->namespace, '/seo/social', [
+            ['methods' => 'GET',       'callback' => [$this, 'get_social_settings'],    'permission_callback' => [Auth::class, 'tier1']],
+            ['methods' => 'PUT,PATCH', 'callback' => [$this, 'update_social_settings'], 'permission_callback' => [Auth::class, 'tier2']],
+        ]);
+
+        // Breadcrumbs settings
+        register_rest_route($this->namespace, '/seo/breadcrumbs', [
+            ['methods' => 'GET',       'callback' => [$this, 'get_breadcrumb_settings'],    'permission_callback' => [Auth::class, 'tier1']],
+            ['methods' => 'PUT,PATCH', 'callback' => [$this, 'update_breadcrumb_settings'], 'permission_callback' => [Auth::class, 'tier2']],
+        ]);
+
+        // Focus keyphrase management
+        register_rest_route($this->namespace, '/seo/post/(?P<id>\d+)/keyphrases', [
+            ['methods' => 'GET',  'callback' => [$this, 'get_keyphrases'],    'permission_callback' => [Auth::class, 'tier1']],
+            ['methods' => 'POST', 'callback' => [$this, 'update_keyphrases'], 'permission_callback' => [Auth::class, 'tier2']],
         ]);
     }
 
@@ -480,10 +510,434 @@ class SEO extends Base {
     // -------------------------------------------------------------------------
 
     /**
-     * Detect the active SEO plugin.
-     *
-     * @return 'yoast'|'rank_math'|'aioseo'|'seo_framework'|'none'
+     * Update site-wide SEO settings for the active plugin.
      */
+    public function update_site_seo(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $d      = (array) $r->get_json_params();
+        $plugin = $this->active_seo_plugin();
+
+        $updated = [];
+
+        switch ($plugin) {
+            case 'yoast':
+                $option = get_option('wpseo_titles', []);
+                $map    = [
+                    'title_separator'   => 'separator',
+                    'homepage_title'    => 'title-home-wpseo',
+                    'homepage_desc'     => 'metadesc-home-wpseo',
+                    'company_name'      => 'company_name',
+                    'company_logo'      => 'company_logo_url',
+                    'noindex_archives'  => 'noindex-date-wpseo',
+                    'noindex_authors'   => 'noindex-author-wpseo',
+                ];
+                foreach ($map as $k => $opt_k) {
+                    if (!array_key_exists($k, $d)) continue;
+                    $option[$opt_k] = sanitize_text_field((string) $d[$k]);
+                    $updated[] = $k;
+                }
+                update_option('wpseo_titles', $option);
+                break;
+
+            case 'rank_math':
+                $option = get_option('rank_math_general', []);
+                $map    = [
+                    'title_separator'  => 'title_separator',
+                    'company_name'     => 'knowledgegraph_name',
+                    'company_logo'     => 'knowledgegraph_logo',
+                    'noindex_archives' => 'disable_date_archives',
+                    'noindex_authors'  => 'disable_author_archives',
+                ];
+                foreach ($map as $k => $opt_k) {
+                    if (!array_key_exists($k, $d)) continue;
+                    $option[$opt_k] = sanitize_text_field((string) $d[$k]);
+                    $updated[] = $k;
+                }
+                update_option('rank_math_general', $option);
+                break;
+
+            default:
+                return $this->error('No supported SEO plugin detected', 503);
+        }
+
+        $this->log('seo_update_site_settings', 'seo', 0, ['plugin' => $plugin, 'updated' => $updated], 2);
+        return $this->success(['updated' => $updated, 'plugin' => $plugin]);
+    }
+
+    // =========================================================================
+    // Redirects
+    // =========================================================================
+
+    public function list_redirects(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $plugin = $this->active_seo_plugin();
+        $pp     = min((int) ($r['per_page'] ?? 50), 200);
+        $page   = max(1, (int) ($r['page'] ?? 1));
+
+        // Rank Math has a built-in redirect manager
+        if ($plugin === 'rank_math' && class_exists('\RankMath\Redirections\DB')) {
+            $items = \RankMath\Redirections\DB::get_redirections([
+                'limit'  => $pp,
+                'offset' => ($page - 1) * $pp,
+            ]);
+            return $this->success([
+                'plugin'    => 'rank_math',
+                'redirects' => $items['redirections'] ?? [],
+                'total'     => (int) ($items['count'] ?? 0),
+            ]);
+        }
+
+        // Yoast Premium redirect table
+        if ($plugin === 'yoast') {
+            global $wpdb;
+            $table = $wpdb->prefix . 'yoast_seo_links';
+            if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+                $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE type = 'redirect'");
+                $rows  = $wpdb->get_results($wpdb->prepare(
+                    "SELECT * FROM {$table} WHERE type = 'redirect' ORDER BY id DESC LIMIT %d OFFSET %d",
+                    $pp, ($page - 1) * $pp
+                ), ARRAY_A) ?: [];
+                return $this->success(['plugin' => 'yoast', 'redirects' => $rows, 'total' => $total]);
+            }
+        }
+
+        // Fallback: check for Redirection plugin
+        global $wpdb;
+        $table = $wpdb->prefix . 'redirection_items';
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+            $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+            $rows  = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, url, action_data, regex, enabled FROM {$table} ORDER BY id DESC LIMIT %d OFFSET %d",
+                $pp, ($page - 1) * $pp
+            ), ARRAY_A) ?: [];
+            return $this->success([
+                'plugin'    => 'redirection',
+                'redirects' => array_map(fn($row) => [
+                    'id'     => (int) $row['id'],
+                    'source' => $row['url'],
+                    'target' => $row['action_data'],
+                    'regex'  => (bool) $row['regex'],
+                    'active' => (bool) $row['enabled'],
+                ], $rows),
+                'total' => $total,
+            ]);
+        }
+
+        return $this->error('No redirect manager found (Rank Math, Yoast Premium, or Redirection plugin required)', 503);
+    }
+
+    public function create_redirect(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $d      = (array) $r->get_json_params();
+        $source = sanitize_text_field((string) ($d['source'] ?? ''));
+        $target = esc_url_raw((string) ($d['target'] ?? ''));
+
+        if (empty($source) || empty($target)) {
+            return $this->error('source and target are required');
+        }
+
+        $plugin = $this->active_seo_plugin();
+
+        // Rank Math
+        if ($plugin === 'rank_math' && class_exists('\RankMath\Redirections\DB')) {
+            $id = \RankMath\Redirections\DB::update([
+                'sources'     => [['pattern' => $source, 'comparison' => sanitize_key($d['comparison'] ?? 'exact')]],
+                'url_to'      => $target,
+                'header_code' => (int) ($d['code'] ?? 301),
+                'status'      => 'active',
+            ]);
+            $this->log('seo_create_redirect', 'seo', $id, ['source' => $source], 2);
+            return $this->success(['id' => $id, 'source' => $source, 'target' => $target], 201);
+        }
+
+        // Redirection plugin fallback
+        global $wpdb;
+        $table = $wpdb->prefix . 'redirection_items';
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+            $wpdb->insert($table, [
+                'url'           => $source,
+                'action_type'   => 'url',
+                'action_data'   => $target,
+                'action_code'   => (int) ($d['code'] ?? 301),
+                'enabled'       => 1,
+                'regex'         => (int) (bool) ($d['regex'] ?? false),
+                'group_id'      => 1,
+                'hits'          => 0,
+                'created'       => current_time('mysql', true),
+            ]);
+            $id = $wpdb->insert_id;
+            $this->log('seo_create_redirect', 'seo', $id, ['source' => $source, 'plugin' => 'redirection'], 2);
+            return $this->success(['id' => $id, 'source' => $source, 'target' => $target], 201);
+        }
+
+        return $this->error('No redirect manager found', 503);
+    }
+
+    public function update_redirect(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $id = (int) $r['id'];
+        $d  = (array) $r->get_json_params();
+
+        // Redirection plugin
+        global $wpdb;
+        $table = $wpdb->prefix . 'redirection_items';
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+            $update = [];
+            if (isset($d['source'])) $update['url']         = sanitize_text_field($d['source']);
+            if (isset($d['target'])) $update['action_data'] = esc_url_raw($d['target']);
+            if (isset($d['active'])) $update['enabled']     = (int) (bool) $d['active'];
+            if (isset($d['code']))   $update['action_code'] = (int) $d['code'];
+            if (!empty($update)) $wpdb->update($table, $update, ['id' => $id]);
+            $this->log('seo_update_redirect', 'seo', $id, [], 2);
+            return $this->success(['updated' => true, 'id' => $id]);
+        }
+
+        return $this->error('No redirect manager found', 503);
+    }
+
+    public function delete_redirect(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $id     = (int) $r['id'];
+        $plugin = $this->active_seo_plugin();
+
+        if ($plugin === 'rank_math' && class_exists('\RankMath\Redirections\DB')) {
+            \RankMath\Redirections\DB::delete($id);
+            $this->log('seo_delete_redirect', 'seo', $id, ['plugin' => 'rank_math'], 3);
+            return $this->success(['deleted' => true]);
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'redirection_items';
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+            $wpdb->delete($table, ['id' => $id]);
+            $this->log('seo_delete_redirect', 'seo', $id, ['plugin' => 'redirection'], 3);
+            return $this->success(['deleted' => true]);
+        }
+
+        return $this->error('No redirect manager found', 503);
+    }
+
+    // =========================================================================
+    // Social / Open Graph settings
+    // =========================================================================
+
+    public function get_social_settings(\WP_REST_Request $r): \WP_REST_Response {
+        $plugin = $this->active_seo_plugin();
+
+        switch ($plugin) {
+            case 'yoast':
+                $opt = get_option('wpseo_social', []);
+                return $this->success([
+                    'plugin'           => 'yoast',
+                    'facebook_site'    => $opt['facebook_site'] ?? '',
+                    'twitter_site'     => $opt['twitter_site'] ?? '',
+                    'og_default_image' => $opt['og_default_image'] ?? '',
+                    'og_frontpage_title' => $opt['og_frontpage_title'] ?? '',
+                    'og_frontpage_desc'  => $opt['og_frontpage_desc'] ?? '',
+                    'twitter_card_type'  => $opt['twitter_card_type'] ?? 'summary_large_image',
+                    'open_graph_frontpage_image' => $opt['og_frontpage_image'] ?? '',
+                ]);
+
+            case 'rank_math':
+                $opt = get_option('rank_math_general', []);
+                return $this->success([
+                    'plugin'           => 'rank_math',
+                    'facebook_author'  => $opt['social_url_facebook'] ?? '',
+                    'twitter_handle'   => $opt['social_url_twitter'] ?? '',
+                    'og_default_image' => $opt['open_graph_image'] ?? '',
+                ]);
+
+            default:
+                return $this->success(['plugin' => $plugin, 'note' => 'Social settings not available for this plugin']);
+        }
+    }
+
+    public function update_social_settings(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $d      = (array) $r->get_json_params();
+        $plugin = $this->active_seo_plugin();
+        $updated= [];
+
+        switch ($plugin) {
+            case 'yoast':
+                $opt = get_option('wpseo_social', []);
+                $map = [
+                    'facebook_site'      => 'facebook_site',
+                    'twitter_site'       => 'twitter_site',
+                    'og_default_image'   => 'og_default_image',
+                    'og_frontpage_title' => 'og_frontpage_title',
+                    'og_frontpage_desc'  => 'og_frontpage_desc',
+                    'twitter_card_type'  => 'twitter_card_type',
+                ];
+                foreach ($map as $k => $opt_k) {
+                    if (!array_key_exists($k, $d)) continue;
+                    $opt[$opt_k] = sanitize_text_field((string) $d[$k]);
+                    $updated[] = $k;
+                }
+                update_option('wpseo_social', $opt);
+                break;
+
+            case 'rank_math':
+                $opt = get_option('rank_math_general', []);
+                $map = [
+                    'facebook_author'  => 'social_url_facebook',
+                    'twitter_handle'   => 'social_url_twitter',
+                    'og_default_image' => 'open_graph_image',
+                ];
+                foreach ($map as $k => $opt_k) {
+                    if (!array_key_exists($k, $d)) continue;
+                    $opt[$opt_k] = sanitize_text_field((string) $d[$k]);
+                    $updated[] = $k;
+                }
+                update_option('rank_math_general', $opt);
+                break;
+
+            default:
+                return $this->error('No supported SEO plugin detected', 503);
+        }
+
+        $this->log('seo_update_social', 'seo', 0, ['plugin' => $plugin, 'updated' => $updated], 2);
+        return $this->success(['plugin' => $plugin, 'updated' => $updated]);
+    }
+
+    // =========================================================================
+    // Breadcrumbs settings
+    // =========================================================================
+
+    public function get_breadcrumb_settings(\WP_REST_Request $r): \WP_REST_Response {
+        $plugin = $this->active_seo_plugin();
+
+        switch ($plugin) {
+            case 'yoast':
+                $opt = get_option('wpseo_titles', []);
+                return $this->success([
+                    'plugin'         => 'yoast',
+                    'enabled'        => (bool) ($opt['breadcrumbs-enable'] ?? false),
+                    'separator'      => $opt['breadcrumbs-sep'] ?? '»',
+                    'home_label'     => $opt['breadcrumbs-home'] ?? 'Home',
+                    'show_blog_page' => (bool) ($opt['breadcrumbs-blog-remove'] ?? false),
+                    'prefix'         => $opt['breadcrumbs-prefix'] ?? '',
+                ]);
+
+            case 'rank_math':
+                $opt = get_option('rank_math_general', []);
+                return $this->success([
+                    'plugin'         => 'rank_math',
+                    'enabled'        => true,
+                    'separator'      => $opt['breadcrumbs_separator'] ?? '/',
+                    'home_label'     => $opt['breadcrumbs_home_label'] ?? 'Home',
+                    'prefix'         => $opt['breadcrumbs_prefix'] ?? '',
+                ]);
+
+            default:
+                return $this->success(['plugin' => $plugin, 'note' => 'Breadcrumb settings not available for this plugin']);
+        }
+    }
+
+    public function update_breadcrumb_settings(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $d      = (array) $r->get_json_params();
+        $plugin = $this->active_seo_plugin();
+        $updated= [];
+
+        switch ($plugin) {
+            case 'yoast':
+                $opt = get_option('wpseo_titles', []);
+                $map = [
+                    'enabled'        => 'breadcrumbs-enable',
+                    'separator'      => 'breadcrumbs-sep',
+                    'home_label'     => 'breadcrumbs-home',
+                    'show_blog_page' => 'breadcrumbs-blog-remove',
+                    'prefix'         => 'breadcrumbs-prefix',
+                ];
+                foreach ($map as $k => $opt_k) {
+                    if (!array_key_exists($k, $d)) continue;
+                    $opt[$opt_k] = in_array($k, ['enabled', 'show_blog_page'], true)
+                        ? (bool) $d[$k]
+                        : sanitize_text_field((string) $d[$k]);
+                    $updated[] = $k;
+                }
+                update_option('wpseo_titles', $opt);
+                break;
+
+            case 'rank_math':
+                $opt = get_option('rank_math_general', []);
+                $map = [
+                    'separator'  => 'breadcrumbs_separator',
+                    'home_label' => 'breadcrumbs_home_label',
+                    'prefix'     => 'breadcrumbs_prefix',
+                ];
+                foreach ($map as $k => $opt_k) {
+                    if (!array_key_exists($k, $d)) continue;
+                    $opt[$opt_k] = sanitize_text_field((string) $d[$k]);
+                    $updated[] = $k;
+                }
+                update_option('rank_math_general', $opt);
+                break;
+
+            default:
+                return $this->error('No supported SEO plugin detected', 503);
+        }
+
+        $this->log('seo_update_breadcrumbs', 'seo', 0, ['plugin' => $plugin, 'updated' => $updated], 2);
+        return $this->success(['plugin' => $plugin, 'updated' => $updated]);
+    }
+
+    // =========================================================================
+    // Focus keyphrases
+    // =========================================================================
+
+    public function get_keyphrases(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $post_id = (int) $r['id'];
+        if (!get_post($post_id)) return $this->error('Post not found', 404);
+
+        $plugin = $this->active_seo_plugin();
+
+        switch ($plugin) {
+            case 'yoast':
+                return $this->success([
+                    'plugin'       => 'yoast',
+                    'post_id'      => $post_id,
+                    'focus_keyphrase' => get_post_meta($post_id, '_yoast_wpseo_focuskw', true),
+                    'related_keyphrases' => get_post_meta($post_id, '_yoast_wpseo_focuskeywords', true),
+                ]);
+
+            case 'rank_math':
+                return $this->success([
+                    'plugin'       => 'rank_math',
+                    'post_id'      => $post_id,
+                    'focus_keyphrase' => get_post_meta($post_id, 'rank_math_focus_keyword', true),
+                ]);
+
+            default:
+                return $this->error('Keyphrase management requires Yoast or Rank Math', 503);
+        }
+    }
+
+    public function update_keyphrases(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $post_id = (int) $r['id'];
+        if (!get_post($post_id)) return $this->error('Post not found', 404);
+
+        $d      = (array) $r->get_json_params();
+        $plugin = $this->active_seo_plugin();
+        $updated= [];
+
+        switch ($plugin) {
+            case 'yoast':
+                if (isset($d['focus_keyphrase'])) {
+                    update_post_meta($post_id, '_yoast_wpseo_focuskw', sanitize_text_field($d['focus_keyphrase']));
+                    $updated[] = 'focus_keyphrase';
+                }
+                break;
+
+            case 'rank_math':
+                if (isset($d['focus_keyphrase'])) {
+                    update_post_meta($post_id, 'rank_math_focus_keyword', sanitize_text_field($d['focus_keyphrase']));
+                    $updated[] = 'focus_keyphrase';
+                }
+                break;
+
+            default:
+                return $this->error('Keyphrase management requires Yoast or Rank Math', 503);
+        }
+
+        $this->log('seo_update_keyphrases', 'seo', $post_id, ['plugin' => $plugin, 'updated' => $updated], 2);
+        return $this->success(['post_id' => $post_id, 'plugin' => $plugin, 'updated' => $updated]);
+    }
+
     private function active_seo_plugin(): string {
         if (defined('WPSEO_VERSION')) {
             return 'yoast';
