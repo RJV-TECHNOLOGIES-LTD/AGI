@@ -254,6 +254,14 @@ class Installer {
             'appinsights_key'           => '',
             'appinsights_connection_string' => '',
             'appinsights_enabled'       => '0',
+
+            // ── Local hosting / tunnel defaults ────────────────────────────
+            'tunnel_local_port'         => 80,
+            'tunnel_auto_apply_url'     => '0',
+
+            // ── Provisioning orchestrator defaults ─────────────────────────
+            'provision_auto_start'      => '0',   // Auto-provision on first activate
+            'provision_services'        => ['tunnel', 'cloudflare', 'google', 'microsoft'],
         ];
 
         foreach ($defaults as $k => $v) {

@@ -24,6 +24,7 @@ use RJV_AGI_Bridge\Governance\PolicyEngine;
 use RJV_AGI_Bridge\Governance\ContractManager;
 use RJV_AGI_Bridge\Governance\UpgradeSafety;
 use RJV_AGI_Bridge\Observability\ReliabilityMonitor;
+use RJV_AGI_Bridge\Hosting\TunnelHealthMonitor;
 
 /**
  * Main Plugin Class
@@ -194,6 +195,9 @@ final class Plugin {
             $results = $monitor->run_scan();
             $monitor->save_scan($results);
         });
+
+        // Tunnel health monitor (custom 5-minute interval + hook)
+        Hosting\TunnelHealthMonitor::register_hooks();
     }
 
     /**
@@ -230,6 +234,7 @@ final class Plugin {
             new API\LocalHosting(),
             new API\CloudflareManager(),
             new API\ExternalPlatforms(),
+            new API\AutoProvision(),
         ];
 
         foreach ($core_controllers as $controller) {
