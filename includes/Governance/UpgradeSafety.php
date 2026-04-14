@@ -119,7 +119,7 @@ final class UpgradeSafety {
         ];
         $snapshot = [];
         foreach ($keys as $key) {
-            $snapshot[$key] = get_option($key, null);
+            $snapshot[$key] = TenantIsolation::instance()->get_option($key, null);
         }
         return $snapshot;
     }

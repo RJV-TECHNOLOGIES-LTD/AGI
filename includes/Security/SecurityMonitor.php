@@ -390,7 +390,7 @@ final class SecurityMonitor {
             "SELECT AVG(hourly_count) FROM (
                 SELECT COUNT(*) as hourly_count FROM {$log_table} 
                 WHERE timestamp >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
-                GROUP BY HOUR(timestamp)
+                GROUP BY DATE(timestamp), HOUR(timestamp)
             ) as hourly"
         );
 

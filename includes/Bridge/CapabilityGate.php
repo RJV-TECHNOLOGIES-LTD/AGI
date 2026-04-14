@@ -121,7 +121,7 @@ final class CapabilityGate {
     public function resolve_context_capabilities(array $context = []): array {
         $environment = sanitize_key((string) ($context['environment'] ?? (function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production')));
         $tenantId = sanitize_text_field((string) ($context['tenant_id'] ?? (TenantIsolation::instance()->get_tenant_id() ?? '')));
-        $plan = sanitize_key((string) ($context['plan'] ?? ((array) $this->get_available())['plan'] ?? 'default'));
+        $plan = sanitize_key((string) ($context['plan'] ?? $this->connector->validate_subscription()['plan'] ?? 'default'));
 
         $resolved = $this->get_available();
         $provenance = ['base' => 'platform_plan', 'tenant' => false, 'environment' => false, 'plan' => $plan];
