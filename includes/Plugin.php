@@ -71,10 +71,10 @@ final class Plugin {
             'AI/Provider', 'AI/OpenAI', 'AI/Anthropic', 'AI/Router',
             'API/Base', 'API/Posts', 'API/Pages', 'API/Media', 'API/Users',
             'API/Options', 'API/Themes', 'API/Plugins', 'API/Menus', 'API/Widgets',
-            'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
-            'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/EnterpriseControl',
-            'Admin/Dashboard',
-        ];
+             'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
+             'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
+             'Admin/Dashboard',
+         ];
 
         // Load enterprise modules
         $enterprise_files = [
@@ -218,6 +218,8 @@ final class Plugin {
             new API\Database(),
             new API\FileSystem(),
             new API\Cron(),
+            new API\Tools(),
+            new API\Sites(),
             new API\EnterpriseControl(),
         ];
 

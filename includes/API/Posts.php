@@ -18,6 +18,12 @@ class Posts extends Base {
         register_rest_route($this->namespace, '/posts/bulk', [
             ['methods'=>'POST','callback'=>[$this,'bulk'],'permission_callback'=>[Auth::class,'tier2']],
         ]);
+        register_rest_route($this->namespace, '/posts/(?P<id>\d+)/revisions', [
+            ['methods'=>'GET','callback'=>[$this,'revisions'],'permission_callback'=>[Auth::class,'tier1']],
+        ]);
+        register_rest_route($this->namespace, '/posts/(?P<id>\d+)/revisions/(?P<revision_id>\d+)/restore', [
+            ['methods'=>'POST','callback'=>[$this,'restore_revision'],'permission_callback'=>[Auth::class,'tier3']],
+        ]);
     }
     public function list_posts(\WP_REST_Request $r): \WP_REST_Response {
         $args = ['post_type'=>'post','posts_per_page'=>min((int)$r['per_page'],100),'paged'=>(int)$r['page'],'post_status'=>$r['status']];
@@ -80,6 +86,24 @@ class Posts extends Base {
         }
         $this->log('bulk_posts','post',0,['action'=>$action,'count'=>count($ids)],$action==='delete'?3:2);
         return $this->success($results);
+    }
+    public function revisions(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $id=(int)$r['id']; $p=get_post($id); if(!$p||$p->post_type!=='post') return $this->error('Not found',404);
+        $revs=wp_get_post_revisions($id,['check_enabled'=>false]);
+        $items=array_map(function(\WP_Post $rev): array {
+            return ['id'=>$rev->ID,'parent'=>(int)$rev->post_parent,'author'=>(int)$rev->post_author,'date'=>$rev->post_date_gmt,'modified'=>$rev->post_modified_gmt,'title'=>$rev->post_title];
+        }, array_values($revs));
+        return $this->success(['post_id'=>$id,'revisions'=>$items]);
+    }
+    public function restore_revision(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $id=(int)$r['id']; $revision_id=(int)$r['revision_id'];
+        $post=get_post($id); $revision=get_post($revision_id);
+        if(!$post||$post->post_type!=='post') return $this->error('Not found',404);
+        if(!$revision||$revision->post_parent!==$id||$revision->post_type!=='revision') return $this->error('Revision not found',404);
+        $restored=wp_restore_post_revision($revision_id);
+        if(!$restored) return $this->error('Failed to restore revision',500);
+        $this->log('restore_post_revision','post',$id,['revision_id'=>$revision_id],3);
+        return $this->success(['restored'=>true,'post_id'=>$id,'revision_id'=>$revision_id]);
     }
     private function fmt(\WP_Post $p, bool $full=false): array {
         $d=['id'=>$p->ID,'title'=>$p->post_title,'slug'=>$p->post_name,'status'=>$p->post_status,
