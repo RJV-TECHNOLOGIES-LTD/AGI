@@ -624,7 +624,8 @@ final class Plugin {
         // Initialize tenant context
         TenantIsolation::instance();
 
-        $policy = $this->has_valid_policy_approval($request, $route)
+        $hasApprovalOverride = $this->has_valid_policy_approval($request, $route);
+        $policy = $hasApprovalOverride
             ? ['allowed' => true, 'requires_approval' => false, 'policy' => 'approved_override']
             : PolicyEngine::instance()->evaluate($request);
         if (($policy['allowed'] ?? true) !== true) {
@@ -645,8 +646,16 @@ final class Plugin {
             ]);
         }
 
-        if (($policy['requires_approval'] ?? false) === true) {
+        $mandatoryApproval = !$hasApprovalOverride
+            ? $this->mandatory_approval_requirement($request, $route)
+            : null;
+        $requiresApproval = (($policy['requires_approval'] ?? false) === true) || is_array($mandatoryApproval);
+        if ($requiresApproval) {
             $actionType = (($policy['escalated'] ?? false) === true) ? 'policy_escalation_request' : 'policy_guardrail_request';
+            $approvalSource = (($policy['requires_approval'] ?? false) === true) ? 'policy' : 'mandatory_critical';
+            $approvalWhy = ($approvalSource === 'policy')
+                ? (string) ($policy['reason'] ?? 'Approval required by policy')
+                : (string) ($mandatoryApproval['reason'] ?? 'Approval required for critical operation');
             $approval = ApprovalWorkflow::instance()->submit($actionType, [
                 'route' => $route,
                 'method' => $request->get_method(),
@@ -656,6 +665,9 @@ final class Plugin {
                 'rule_id' => (string) ($policy['rule_id'] ?? ''),
                 'rule_type' => (string) ($policy['rule_type'] ?? ''),
                 'policy_reason' => (string) ($policy['reason'] ?? ''),
+                'approval_source' => $approvalSource,
+                'critical_class' => (string) ($mandatoryApproval['class'] ?? ''),
+                'critical_reason' => (string) ($mandatoryApproval['reason'] ?? ''),
             ], 'api', 'agi');
             AuditLog::log('request_policy_lineage', 'request', 0, [
                 'route' => $route,
@@ -666,13 +678,16 @@ final class Plugin {
                 'agent_id' => $agent_id,
                 'policy_decision' => (($policy['escalated'] ?? false) === true) ? 'escalate' : 'approve',
                 'policy' => (string) ($policy['policy'] ?? ''),
-                'why' => (string) ($policy['reason'] ?? 'Approval required by policy'),
+                'approval_source' => $approvalSource,
+                'critical_class' => (string) ($mandatoryApproval['class'] ?? ''),
+                'why' => $approvalWhy,
             ], 2);
 
             return new \WP_REST_Response([
                 'success' => true,
                 'data' => [
                     'requires_approval' => true,
+                    'approval_source' => $approvalSource,
                     'approval' => $approval,
                     'trace_id' => $trace_id,
                 ],
@@ -687,6 +702,7 @@ final class Plugin {
             'agent_id' => $agent_id,
             'policy_decision' => 'allow',
             'policy' => (string) ($policy['policy'] ?? 'default'),
+            'approval_source' => $hasApprovalOverride ? 'approved_override' : 'none',
             'why' => (string) ($policy['reason'] ?? 'Allowed by policy'),
         ], 1);
 
@@ -772,6 +788,42 @@ final class Plugin {
 
         return (string) ($actionData['route'] ?? '') === $route
             && strtoupper((string) ($actionData['method'] ?? '')) === strtoupper($request->get_method());
+    }
+
+    private function mandatory_approval_requirement(\WP_REST_Request $request, string $route): ?array {
+        $method = strtoupper((string) $request->get_method());
+        if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+            return null;
+        }
+        if (str_starts_with($route, '/rjv-agi/v1/approvals') || str_starts_with($route, '/rjv-agi/v1/health')) {
+            return null;
+        }
+
+        $params = (array) $request->get_json_params();
+        $force = filter_var($params['force'] ?? false, FILTER_VALIDATE_BOOLEAN) === true;
+
+        if (preg_match('#^/rjv-agi/v1/users/\d+/role-transition$#', $route) === 1) {
+            return [
+                'class' => 'user_role_change',
+                'reason' => 'User role transitions require explicit approval',
+            ];
+        }
+
+        if (str_starts_with($route, '/rjv-agi/v1/plugins') || str_starts_with($route, '/rjv-agi/v1/themes')) {
+            return [
+                'class' => 'plugin_theme_operation',
+                'reason' => 'Plugin/theme mutations require explicit approval',
+            ];
+        }
+
+        if ($method === 'DELETE' || $force || str_contains($route, '/delete')) {
+            return [
+                'class' => 'destructive_action',
+                'reason' => 'Destructive or force operations require explicit approval',
+            ];
+        }
+
+        return null;
     }
 
     // Accessors for modules

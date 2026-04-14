@@ -25,6 +25,7 @@ All notable changes to the RJV AGI Bridge plugin will be documented in this file
 - Options API now covers a broader set of default WordPress settings (reading, writing, discussion, media, permalink, general/privacy-adjacent keys) with typed sanitization.
 - Theme API now exposes template parts, registered block patterns, and global styles visibility for modern WordPress default appearance features.
 - Request governance lineage now emits unified audit fields for request_id, trace_id, policy decision/reason, approval linkage, and actor context in pre-dispatch policy enforcement.
+- Pre-dispatch governance now enforces mandatory approval binding for critical classes (user role transition, plugin/theme mutation, destructive/force actions) even when policy rules do not explicitly require approval.
 
 ## [3.2.0] - 2026-04-14
 
