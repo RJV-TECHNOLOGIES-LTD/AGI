@@ -24,6 +24,18 @@ class Posts extends Base {
         register_rest_route($this->namespace, '/posts/(?P<id>\d+)/revisions/(?P<revision_id>\d+)/restore', [
             ['methods'=>'POST','callback'=>[$this,'restore_revision'],'permission_callback'=>[Auth::class,'tier3']],
         ]);
+        register_rest_route($this->namespace, '/posts/scheduled', [
+            ['methods'=>'GET','callback'=>[$this,'scheduled'],'permission_callback'=>[Auth::class,'tier1']],
+        ]);
+        register_rest_route($this->namespace, '/posts/(?P<id>\d+)/schedule', [
+            ['methods'=>'POST','callback'=>[$this,'reschedule'],'permission_callback'=>[Auth::class,'tier2']],
+        ]);
+        register_rest_route($this->namespace, '/posts/(?P<id>\d+)/schedule/cancel', [
+            ['methods'=>'POST','callback'=>[$this,'cancel_schedule'],'permission_callback'=>[Auth::class,'tier2']],
+        ]);
+        register_rest_route($this->namespace, '/posts/(?P<id>\d+)/publish-now', [
+            ['methods'=>'POST','callback'=>[$this,'publish_now'],'permission_callback'=>[Auth::class,'tier2']],
+        ]);
     }
     public function list_posts(\WP_REST_Request $r): \WP_REST_Response {
         $args = ['post_type'=>'post','posts_per_page'=>min((int)$r['per_page'],100),'paged'=>(int)$r['page'],'post_status'=>$r['status']];
@@ -104,6 +116,65 @@ class Posts extends Base {
         if(!$restored) return $this->error('Failed to restore revision',500);
         $this->log('restore_post_revision','post',$id,['revision_id'=>$revision_id],3);
         return $this->success(['restored'=>true,'post_id'=>$id,'revision_id'=>$revision_id]);
+    }
+    public function scheduled(\WP_REST_Request $r): \WP_REST_Response {
+        $q = new \WP_Query([
+            'post_type' => 'post',
+            'post_status' => 'future',
+            'posts_per_page' => min(max((int)($r->get_param('per_page') ?? 50),1),200),
+            'paged' => max((int)($r->get_param('page') ?? 1),1),
+            'orderby' => 'date',
+            'order' => 'ASC',
+        ]);
+        return $this->success([
+            'items' => array_map(fn($p)=>$this->fmt($p), $q->posts),
+            'total' => (int)$q->found_posts,
+            'pages' => (int)$q->max_num_pages,
+        ]);
+    }
+    public function reschedule(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $id=(int)$r['id']; $post=get_post($id); if(!$post||$post->post_type!=='post') return $this->error('Not found',404);
+        $d=(array)$r->get_json_params();
+        $target=(string)($d['date_gmt'] ?? '');
+        if($target==='') {
+            $local=(string)($d['date'] ?? '');
+            if($local==='') return $this->error('date_gmt or date is required');
+            $ts=strtotime($local); if($ts===false) return $this->error('Invalid date');
+            $target=gmdate('Y-m-d H:i:s',$ts);
+        } else {
+            $ts=strtotime($target.' UTC'); if($ts===false) return $this->error('Invalid date_gmt');
+            $target=gmdate('Y-m-d H:i:s',$ts);
+        }
+        $res=wp_update_post([
+            'ID'=>$id,
+            'post_status'=>'future',
+            'post_date_gmt'=>$target,
+            'post_date'=>get_date_from_gmt($target),
+        ], true);
+        if(is_wp_error($res)) return $this->error($res->get_error_message(),500);
+        $this->log('reschedule_post','post',$id,['date_gmt'=>$target],2);
+        return $this->success(['scheduled'=>true,'id'=>$id,'date_gmt'=>$target]);
+    }
+    public function cancel_schedule(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $id=(int)$r['id']; $post=get_post($id); if(!$post||$post->post_type!=='post') return $this->error('Not found',404);
+        if($post->post_status!=='future') return $this->error('Post is not scheduled');
+        $res=wp_update_post(['ID'=>$id,'post_status'=>'draft'], true);
+        if(is_wp_error($res)) return $this->error($res->get_error_message(),500);
+        $this->log('cancel_schedule_post','post',$id,[],2);
+        return $this->success(['cancelled'=>true,'id'=>$id,'status'=>'draft']);
+    }
+    public function publish_now(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
+        $id=(int)$r['id']; $post=get_post($id); if(!$post||$post->post_type!=='post') return $this->error('Not found',404);
+        $now_gmt=current_time('mysql', true);
+        $res=wp_update_post([
+            'ID'=>$id,
+            'post_status'=>'publish',
+            'post_date_gmt'=>$now_gmt,
+            'post_date'=>get_date_from_gmt($now_gmt),
+        ], true);
+        if(is_wp_error($res)) return $this->error($res->get_error_message(),500);
+        $this->log('publish_now_post','post',$id,[],2);
+        return $this->success(['published'=>true,'id'=>$id,'status'=>'publish']);
     }
     private function fmt(\WP_Post $p, bool $full=false): array {
         $d=['id'=>$p->ID,'title'=>$p->post_title,'slug'=>$p->post_name,'status'=>$p->post_status,

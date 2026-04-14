@@ -611,6 +611,15 @@ final class Plugin {
         }
 
         $trace_id = ReliabilityMonitor::instance()->begin_trace($request);
+        $request_id = sanitize_text_field((string) $request->get_header('X-RJV-Request-ID'));
+        if ($request_id === '') {
+            $request_id = 'req_' . wp_generate_uuid4();
+        }
+        $approval_id = (int) $request->get_header('X-RJV-Approval-ID');
+        $agent_id = sanitize_text_field((string) $request->get_header('X-RJV-Agent-ID'));
+        if ($agent_id === '') {
+            $agent_id = 'api';
+        }
 
         // Initialize tenant context
         TenantIsolation::instance();
@@ -619,6 +628,17 @@ final class Plugin {
             ? ['allowed' => true, 'requires_approval' => false, 'policy' => 'approved_override']
             : PolicyEngine::instance()->evaluate($request);
         if (($policy['allowed'] ?? true) !== true) {
+            AuditLog::log('request_policy_lineage', 'request', 0, [
+                'route' => $route,
+                'method' => $request->get_method(),
+                'trace_id' => $trace_id,
+                'request_id' => $request_id,
+                'approval_id' => $approval_id,
+                'agent_id' => $agent_id,
+                'policy_decision' => 'deny',
+                'policy' => (string) ($policy['policy'] ?? ''),
+                'why' => (string) ($policy['reason'] ?? 'Request denied by policy'),
+            ], 2, 'error');
             return new \WP_Error('policy_denied', $policy['reason'] ?? 'Request denied by policy', [
                 'status' => 403,
                 'trace_id' => $trace_id,
@@ -632,10 +652,22 @@ final class Plugin {
                 'method' => $request->get_method(),
                 'params' => $request->get_json_params(),
                 'trace_id' => $trace_id,
+                'request_id' => $request_id,
                 'rule_id' => (string) ($policy['rule_id'] ?? ''),
                 'rule_type' => (string) ($policy['rule_type'] ?? ''),
                 'policy_reason' => (string) ($policy['reason'] ?? ''),
             ], 'api', 'agi');
+            AuditLog::log('request_policy_lineage', 'request', 0, [
+                'route' => $route,
+                'method' => $request->get_method(),
+                'trace_id' => $trace_id,
+                'request_id' => $request_id,
+                'approval_id' => (int) ($approval['approval_id'] ?? 0),
+                'agent_id' => $agent_id,
+                'policy_decision' => (($policy['escalated'] ?? false) === true) ? 'escalate' : 'approve',
+                'policy' => (string) ($policy['policy'] ?? ''),
+                'why' => (string) ($policy['reason'] ?? 'Approval required by policy'),
+            ], 2);
 
             return new \WP_REST_Response([
                 'success' => true,
@@ -646,6 +678,17 @@ final class Plugin {
                 ],
             ], 202);
         }
+        AuditLog::log('request_policy_lineage', 'request', 0, [
+            'route' => $route,
+            'method' => $request->get_method(),
+            'trace_id' => $trace_id,
+            'request_id' => $request_id,
+            'approval_id' => $approval_id,
+            'agent_id' => $agent_id,
+            'policy_decision' => 'allow',
+            'policy' => (string) ($policy['policy'] ?? 'default'),
+            'why' => (string) ($policy['reason'] ?? 'Allowed by policy'),
+        ], 1);
 
         // Dispatch event for request
         EventDispatcher::instance()->dispatch('api.request', [

@@ -46,22 +46,22 @@ The RJV AGI Bridge is not a feature-based add-on, chatbot, or content generator.
 
 | Group | Endpoints | Tier |
 |-------|-----------|------|
-| Posts | CRUD + Bulk operations | T1–T3 |
-| Pages | CRUD with templates | T1–T3 |
+| Posts | CRUD + Bulk + revisions + scheduled queue controls | T1–T3 |
+| Pages | CRUD with templates + revisions + scheduled queue controls | T1–T3 |
 | Media | Upload/sideload, metadata edit, regenerate, delete | T1–T3 |
-| Users | Full lifecycle CRUD + roles/capabilities mapping | T1–T3 |
+| Users | Full lifecycle CRUD + roles/capability diff + safe role transitions + password/profile ops | T1–T3 |
 | Options | Extended default WordPress settings coverage | T1–T3 |
-| Themes | List, activate, customiser | T1–T3 |
+| Themes | List/activate + install/update/delete + customiser | T1–T3 |
 | Plugins | List, activate/deactivate, install/update/delete | T1–T3 |
 | Menus | Full menu/item CRUD | T1–T3 |
-| Widgets | List sidebars + widgets | T1 |
+| Widgets | Sidebar/widget visibility + full widget CRUD + placement control | T1–T3 |
 | SEO | Audit, bulk meta, missing | T1–T2 |
 | Comments | List, approve, spam, delete | T1–T3 |
 | Taxonomies | List, terms full CRUD | T1–T3 |
 | Database | Tables, read-only query, optimise | T1–T3 |
 | FileSystem | Theme file read/write | T1–T3 |
 | Cron | List, schedule, clear | T1–T3 |
-| Tools | Privacy export/erase request lifecycle | T1–T3 |
+| Tools | Privacy workflows + controlled settings import/export with tracked jobs | T1–T3 |
 | Sites | Current site + multisite network awareness | T1 |
 | Site Health | Health check, stats, audit log | T1 |
 | AI Content | Complete, generate post, SEO, rewrite | T1–T2 |

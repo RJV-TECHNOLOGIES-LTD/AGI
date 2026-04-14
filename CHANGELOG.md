@@ -15,10 +15,16 @@ All notable changes to the RJV AGI Bridge plugin will be documented in this file
   - Comments bulk moderation endpoint and generic status update endpoint
   - Privacy tools request lifecycle endpoints (export/erase request create/list/delete)
   - Multisite awareness endpoints for current site context and network site listing
+  - Scheduled content lifecycle controls for posts/pages (queue/list, reschedule, cancel, publish-now)
+  - Users expansion: password set/reset, extended profile updates, capability diff, safe role transition enforcement
+  - Tools import/export execution endpoints with persistent job status tracking
+  - Widgets full lifecycle operations (create/read/update/delete) and sidebar placement/move controls
+  - Themes install/update/delete endpoints with guarded active-theme rollback behavior
 
 ### Improved
 - Options API now covers a broader set of default WordPress settings (reading, writing, discussion, media, permalink, general/privacy-adjacent keys) with typed sanitization.
 - Theme API now exposes template parts, registered block patterns, and global styles visibility for modern WordPress default appearance features.
+- Request governance lineage now emits unified audit fields for request_id, trace_id, policy decision/reason, approval linkage, and actor context in pre-dispatch policy enforcement.
 
 ## [3.2.0] - 2026-04-14
 
