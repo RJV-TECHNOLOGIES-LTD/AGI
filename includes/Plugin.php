@@ -17,6 +17,9 @@ use RJV_AGI_Bridge\Security\AccessControl;
 use RJV_AGI_Bridge\Integration\IntegrationManager;
 use RJV_AGI_Bridge\Integration\WebhookManager;
 use RJV_AGI_Bridge\Performance\PerformanceOptimizer;
+use RJV_AGI_Bridge\Governance\ProgramRegistry;
+use RJV_AGI_Bridge\Governance\PolicyEngine;
+use RJV_AGI_Bridge\Observability\ReliabilityMonitor;
 
 /**
  * Main Plugin Class
@@ -45,6 +48,9 @@ final class Plugin {
     private ?IntegrationManager $integrations = null;
     private ?WebhookManager $webhooks = null;
     private ?PerformanceOptimizer $performance = null;
+    private ?ProgramRegistry $program = null;
+    private ?PolicyEngine $policy = null;
+    private ?ReliabilityMonitor $reliability = null;
 
     public static function instance(): self {
         return self::$instance ??= new self();
@@ -58,7 +64,7 @@ final class Plugin {
             'API/Base', 'API/Posts', 'API/Pages', 'API/Media', 'API/Users',
             'API/Options', 'API/Themes', 'API/Plugins', 'API/Menus', 'API/Widgets',
             'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
-            'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron',
+            'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/EnterpriseControl',
             'Admin/Dashboard',
         ];
 
@@ -73,6 +79,8 @@ final class Plugin {
             'Security/SecurityMonitor', 'Security/AccessControl',
             'Integration/IntegrationManager', 'Integration/WebhookManager',
             'Performance/PerformanceOptimizer',
+            'Governance/ProgramRegistry', 'Governance/PolicyEngine',
+            'Observability/ReliabilityMonitor',
         ];
 
         $all_files = array_merge($core_files, $enterprise_files);
@@ -98,6 +106,7 @@ final class Plugin {
         add_action('admin_enqueue_scripts', [$this->dashboard, 'enqueue_assets']);
         add_filter('rest_pre_dispatch', [$this, 'pre_dispatch'], 5, 3);
         add_filter('rest_pre_dispatch', [$this, 'rate_limit'], 10, 3);
+        add_filter('rest_post_dispatch', [$this, 'post_dispatch'], 10, 3);
 
         // Schedule cron jobs
         $this->schedule_cron_jobs();
@@ -126,6 +135,9 @@ final class Plugin {
         $this->integrations = IntegrationManager::instance();
         $this->webhooks = WebhookManager::instance();
         $this->performance = PerformanceOptimizer::instance();
+        $this->program = ProgramRegistry::instance();
+        $this->policy = PolicyEngine::instance();
+        $this->reliability = ReliabilityMonitor::instance();
     }
 
     /**
@@ -193,6 +205,7 @@ final class Plugin {
             new API\Database(),
             new API\FileSystem(),
             new API\Cron(),
+            new API\EnterpriseControl(),
         ];
 
         foreach ($core_controllers as $controller) {
@@ -582,16 +595,56 @@ final class Plugin {
             return $result;
         }
 
+        $trace_id = ReliabilityMonitor::instance()->begin_trace($request);
+
         // Initialize tenant context
         TenantIsolation::instance();
+
+        $policy = $this->has_valid_policy_approval($request, $route)
+            ? ['allowed' => true, 'requires_approval' => false, 'policy' => 'approved_override']
+            : PolicyEngine::instance()->evaluate($request);
+        if (($policy['allowed'] ?? true) !== true) {
+            return new \WP_Error('policy_denied', $policy['reason'] ?? 'Request denied by policy', [
+                'status' => 403,
+                'trace_id' => $trace_id,
+            ]);
+        }
+
+        if (($policy['requires_approval'] ?? false) === true) {
+            $approval = ApprovalWorkflow::instance()->submit('policy_guardrail_request', [
+                'route' => $route,
+                'method' => $request->get_method(),
+                'params' => $request->get_json_params(),
+                'trace_id' => $trace_id,
+            ], 'api', 'agi');
+
+            return new \WP_REST_Response([
+                'success' => true,
+                'data' => [
+                    'requires_approval' => true,
+                    'approval' => $approval,
+                    'trace_id' => $trace_id,
+                ],
+            ], 202);
+        }
 
         // Dispatch event for request
         EventDispatcher::instance()->dispatch('api.request', [
             'route' => $route,
             'method' => $request->get_method(),
+            'trace_id' => $trace_id,
         ], 3);
 
         return $result;
+    }
+
+    public function post_dispatch($response, $server, $request) {
+        $route = $request->get_route();
+        if (strpos($route, '/rjv-agi/v1/') !== 0) {
+            return $response;
+        }
+
+        return ReliabilityMonitor::instance()->attach_headers($response);
     }
 
     /**
@@ -628,6 +681,34 @@ final class Plugin {
         if ($connector->is_configured()) {
             $connector->heartbeat();
         }
+    }
+
+    private function has_valid_policy_approval(\WP_REST_Request $request, string $route): bool {
+        $approval_id = (int) $request->get_header('X-RJV-Approval-ID');
+        if ($approval_id <= 0) {
+            return false;
+        }
+
+        $item = ApprovalWorkflow::instance()->get_item($approval_id);
+        if (!$item) {
+            return false;
+        }
+
+        if (($item['action_type'] ?? '') !== 'policy_guardrail_request') {
+            return false;
+        }
+
+        $status = (string) ($item['status'] ?? '');
+        if (!in_array($status, ['approved', 'executed'], true)) {
+            return false;
+        }
+
+        $actionData = is_array($item['action_data'] ?? null)
+            ? $item['action_data']
+            : (json_decode((string) ($item['action_data'] ?? ''), true) ?: []);
+
+        return (string) ($actionData['route'] ?? '') === $route
+            && strtoupper((string) ($actionData['method'] ?? '')) === strtoupper($request->get_method());
     }
 
     // Accessors for modules
@@ -690,5 +771,17 @@ final class Plugin {
 
     public function performance(): PerformanceOptimizer {
         return $this->performance ?? PerformanceOptimizer::instance();
+    }
+
+    public function program(): ProgramRegistry {
+        return $this->program ?? ProgramRegistry::instance();
+    }
+
+    public function policy(): PolicyEngine {
+        return $this->policy ?? PolicyEngine::instance();
+    }
+
+    public function reliability(): ReliabilityMonitor {
+        return $this->reliability ?? ReliabilityMonitor::instance();
     }
 }

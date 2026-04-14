@@ -131,6 +131,29 @@ class Installer {
 
             // Security Scanning
             'security_scan_enabled' => '1',
+
+            // Enterprise Program Controls
+            'program_scope_taxonomy' => [
+                'Core Ops', 'AI Orchestration', 'Security', 'Compliance',
+                'Enterprise Integrations', 'Governance', 'Observability', 'Admin UX', 'Platform Controls',
+            ],
+            'program_targets' => [
+                'availability_slo' => 99.9,
+                'api_coverage_pct' => 95.0,
+                'change_failure_rate_pct' => 5.0,
+                'p95_latency_ms' => 800,
+                'rollback_readiness_pct' => 100.0,
+                'security_patch_sla_hours' => 24,
+            ],
+            'program_milestones' => [],
+            'policy_rules' => [
+                'enforcement_enabled' => true,
+                'deny_routes' => [],
+                'approval_routes' => ['/rjv-agi/v1/plugins', '/rjv-agi/v1/themes', '/rjv-agi/v1/filesystem', '/rjv-agi/v1/database'],
+                'approval_methods' => ['DELETE'],
+                'bypass_routes' => ['/rjv-agi/v1/approvals', '/rjv-agi/v1/health'],
+            ],
+            'capability_overrides' => [],
         ];
 
         foreach ($defaults as $k => $v) {

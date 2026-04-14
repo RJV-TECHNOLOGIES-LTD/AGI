@@ -1,6 +1,6 @@
 # RJV AGI Bridge — WordPress Plugin
 
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://rjvtechnologies.com/agi-bridge)
+[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://rjvtechnologies.com/agi-bridge)
 [![PHP](https://img.shields.io/badge/PHP-8.1%2B-purple.svg)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-6.4%2B-blue.svg)](https://wordpress.org)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
@@ -162,6 +162,14 @@ The RJV AGI Bridge is not a feature-based add-on, chatbot, or content generator.
 - Server configuration check
 - Performance scoring
 - Automated recommendations
+
+#### Enterprise Control Plane (NEW in v3.1)
+- Program scope taxonomy and measurable acceptance targets
+- Runtime policy engine with deny rules and approval guardrails
+- Environment-specific capability overrides (dev/staging/production)
+- Reliability telemetry with SLO metrics and request trace IDs
+- Configuration drift detection and baseline snapshots
+- Milestone tracking with definition-of-done metadata
 
 ### Dual AI Integration
 - **OpenAI** (GPT-4.1-mini default) and **Anthropic** (Claude Sonnet default)
@@ -389,6 +397,26 @@ POST /webhooks
 GET /design/tokens
 PUT /design/tokens
 POST /design/validate-css
+```
+
+#### Enterprise Control Plane
+```
+GET /program/scope
+PUT /program/scope
+GET /program/targets
+PUT /program/targets
+GET /program/contracts
+GET /program/milestones
+POST /program/milestones
+GET /governance/policies
+PUT /governance/policies
+POST /governance/evaluate
+GET /capabilities/effective
+GET /capabilities/overrides
+PUT /capabilities/overrides
+GET /observability/slo
+GET /observability/drift
+POST /observability/baseline
 ```
 
 ---

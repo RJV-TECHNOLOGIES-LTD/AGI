@@ -34,7 +34,7 @@ final class CapabilityGate {
             return true; // Unknown actions are allowed by default
         }
 
-        if (!$this->connector->has_capability($capability)) {
+        if (!$this->has_capability($capability)) {
             AuditLog::log('capability_denied', 'gate', 0, [
                 'action' => $action,
                 'capability' => $capability,
@@ -101,6 +101,86 @@ final class CapabilityGate {
      */
     public function get_available(): array {
         return $this->connector->get_capabilities();
+    }
+
+    /**
+     * Get effective capabilities with environment-level overrides.
+     */
+    public function get_effective_capabilities(?string $environment = null): array {
+        $environment = $environment ?: (function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production');
+        $base = $this->get_available();
+        $overrides = $this->get_environment_overrides();
+        $envOverride = is_array($overrides[$environment] ?? null) ? $overrides[$environment] : [];
+
+        if (!empty($envOverride['enabled']) && is_array($envOverride['enabled'])) {
+            $base['enabled'] = array_values(array_unique(array_merge(
+                (array) ($base['enabled'] ?? []),
+                array_map(static fn($v) => sanitize_key((string) $v), $envOverride['enabled'])
+            )));
+        }
+
+        if (!empty($envOverride['disabled']) && is_array($envOverride['disabled'])) {
+            $disabled = array_map(static fn($v) => sanitize_key((string) $v), $envOverride['disabled']);
+            $base['enabled'] = array_values(array_filter(
+                (array) ($base['enabled'] ?? []),
+                static fn($cap) => !in_array($cap, $disabled, true)
+            ));
+        }
+
+        if (!empty($envOverride['limits']) && is_array($envOverride['limits'])) {
+            $base['limits'] = array_merge((array) ($base['limits'] ?? []), $envOverride['limits']);
+        }
+
+        if (!empty($envOverride['features']) && is_array($envOverride['features'])) {
+            $base['features'] = array_merge((array) ($base['features'] ?? []), $envOverride['features']);
+        }
+
+        return $base;
+    }
+
+    /**
+     * Check if specific capability is enabled in effective capability set.
+     */
+    public function has_capability(string $capability, ?string $environment = null): bool {
+        $capabilities = $this->get_effective_capabilities($environment);
+        return in_array($capability, (array) ($capabilities['enabled'] ?? []), true);
+    }
+
+    /**
+     * Get capability overrides per environment.
+     */
+    public function get_environment_overrides(): array {
+        $value = get_option('rjv_agi_capability_overrides', []);
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Update capability overrides per environment.
+     */
+    public function update_environment_overrides(array $overrides): array {
+        $validated = [];
+        foreach ($overrides as $environment => $rules) {
+            $environment = sanitize_key((string) $environment);
+            if ($environment === '' || !is_array($rules)) {
+                continue;
+            }
+
+            $validated[$environment] = [
+                'enabled' => array_values(array_filter(array_map(
+                    static fn($v) => sanitize_key((string) $v),
+                    (array) ($rules['enabled'] ?? [])
+                ))),
+                'disabled' => array_values(array_filter(array_map(
+                    static fn($v) => sanitize_key((string) $v),
+                    (array) ($rules['disabled'] ?? [])
+                ))),
+                'limits' => is_array($rules['limits'] ?? null) ? $rules['limits'] : [],
+                'features' => is_array($rules['features'] ?? null) ? $rules['features'] : [],
+            ];
+        }
+
+        update_option('rjv_agi_capability_overrides', $validated);
+        return $validated;
     }
 
     /**
@@ -201,7 +281,7 @@ final class CapabilityGate {
      * Check usage limits for an action
      */
     private function check_limits(string $action, array $context): array {
-        $capabilities = $this->connector->get_capabilities();
+        $capabilities = $this->get_effective_capabilities();
         $limits = $capabilities['limits'] ?? [];
         $usage = $this->get_usage();
 

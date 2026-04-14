@@ -2,6 +2,20 @@
 
 All notable changes to the RJV AGI Bridge plugin will be documented in this file.
 
+## [3.1.0] - 2026-04-14
+
+### Added
+- Enterprise control-plane API (`/program/*`, `/governance/*`, `/capabilities/*`, `/observability/*`) for product scope governance, policy controls, capability overrides, and reliability telemetry
+- `ProgramRegistry` module for feature taxonomy, measurable targets, milestone/DoD tracking, and API contract/deprecation metadata
+- `PolicyEngine` module for runtime route governance with deny rules, capability checks, and approval guardrails
+- `ReliabilityMonitor` module for request trace IDs, SLO metrics (availability/error-rate/p95 latency), drift reporting, and baseline snapshotting
+- `policy_guardrail_request` approval workflow action type for safe human-in-the-loop execution deferrals
+
+### Improved
+- `CapabilityGate` now supports environment-aware effective capability resolution and per-environment override management
+- REST responses now include enterprise observability headers (`X-RJV-Trace-ID`, `X-RJV-API-Version`, `X-RJV-Governance`)
+- Installer defaults now seed enterprise program, policy, and capability-override control-plane options
+
 ## [2.1.0] - 2026-04-13
 
 ### Security

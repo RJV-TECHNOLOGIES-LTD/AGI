@@ -4,7 +4,7 @@ Tags: ai, api, automation, openai, anthropic, claude, gpt, seo, content-generati
 Requires at least: 6.4
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 3.0.0
+Stable tag: 3.1.0
 License: Proprietary
 License URI: https://rjvtechnologies.com/license
 
@@ -72,6 +72,9 @@ The plugin doesn't limit you - it's already the super car. The AGI Platform adds
 * External integrations with encrypted credentials
 * Webhook system with signature validation
 * Event streaming to AGI Platform
+* Enterprise control-plane governance endpoints
+* Environment-specific capability overrides
+* SLO telemetry, request trace IDs, and drift baselines
 
 **Security & Compliance**
 * Rate limiting and IP allowlisting
@@ -137,6 +140,13 @@ The audit log is insert-only with no update or delete API. It records timestamps
 
 == Changelog ==
 
+= 3.1.0 =
+* NEW: Enterprise Control Plane API for program scope, policy governance, capabilities, and observability
+* NEW: Runtime Policy Engine with deny routes and approval guardrails
+* NEW: Environment-specific capability overrides for dev/staging/production
+* NEW: Reliability monitor with SLO telemetry and request trace headers
+* NEW: Configuration drift reporting and baseline snapshot workflows
+
 = 3.0.0 =
 * NEW: Multi-AI Coordination - orchestrates Claude + GPT together
 * NEW: Enhanced dashboard with clear value proposition
@@ -167,5 +177,5 @@ The audit log is insert-only with no update or delete API. It records timestamps
 
 == Upgrade Notice ==
 
-= 3.0.0 =
-Major release with Multi-AI Coordination and AGI Platform integration. Your existing configuration will be preserved during upgrade.
+= 3.1.0 =
+Enterprise control-plane release adding governance, reliability observability, and environment-aware capability management with backward compatibility.

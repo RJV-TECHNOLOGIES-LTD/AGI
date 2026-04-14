@@ -121,6 +121,11 @@ final class ApprovalWorkflow {
                 'required_role' => 'administrator',
                 'expires_in' => 24 * HOUR_IN_SECONDS,
             ],
+            'policy_guardrail_request' => [
+                'requires_approval' => true,
+                'required_role' => 'administrator',
+                'expires_in' => 6 * HOUR_IN_SECONDS,
+            ],
         ];
     }
 
@@ -293,7 +298,9 @@ final class ApprovalWorkflow {
             return ['success' => false, 'error' => 'Action must be approved before execution'];
         }
 
-        $action_data = json_decode($item['action_data'], true);
+        $action_data = is_array($item['action_data'])
+            ? $item['action_data']
+            : (json_decode((string) $item['action_data'], true) ?: []);
         $result = $this->execute_action($item['action_type'], $action_data);
 
         $wpdb->update($this->table_name, [
@@ -425,6 +432,16 @@ final class ApprovalWorkflow {
                 $preview['summary'] = "Execute goal: " . ($action_data['objective'] ?? '');
                 $preview['details']['actions_count'] = count($action_data['actions'] ?? []);
                 break;
+
+            case 'policy_guardrail_request':
+                $preview['summary'] = 'Execute policy-guarded request';
+                $preview['details'] = [
+                    'method' => sanitize_text_field((string) ($action_data['method'] ?? '')),
+                    'route' => sanitize_text_field((string) ($action_data['route'] ?? '')),
+                    'trace_id' => sanitize_text_field((string) ($action_data['trace_id'] ?? '')),
+                ];
+                $preview['risks'][] = 'Guardrail-protected API request requires explicit execution handoff';
+                break;
         }
 
         return $preview;
@@ -473,6 +490,14 @@ final class ApprovalWorkflow {
 
             case 'goal_execution':
                 return $executor->execute($action_data);
+
+            case 'policy_guardrail_request':
+                return [
+                    'success' => true,
+                    'approved' => true,
+                    'handoff_required' => true,
+                    'message' => 'Request approved. Re-submit original request with approval context.',
+                ];
 
             default:
                 return ['success' => false, 'error' => "Unknown action type: {$action_type}"];
