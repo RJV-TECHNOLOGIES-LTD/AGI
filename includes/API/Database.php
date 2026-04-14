@@ -142,7 +142,11 @@ class Database extends Base {
 
         $limit = max(1, min((int) ($d['limit'] ?? 500), 2000));
 
-        $error = $this->validate_select_query($sql);
+        // strip_sql_comments returns the comment-free SQL; validate on that cleaned
+        // version AND execute that same cleaned version so the two cannot diverge
+        // (prevents MySQL conditional-comment bypass, e.g. SELECT /*!50000 DROP ...*/).
+        $clean = $this->strip_sql_comments($sql);
+        $error = $this->validate_select_query($clean);
         if ($error !== null) {
             return $this->error($error, 403);
         }
@@ -150,7 +154,7 @@ class Database extends Base {
         global $wpdb;
 
         $start   = microtime(true);
-        $results = $wpdb->get_results($wpdb->remove_placeholder_escape($sql), ARRAY_A);
+        $results = $wpdb->get_results($wpdb->remove_placeholder_escape($clean), ARRAY_A);
         $ms      = (int) ((microtime(true) - $start) * 1000);
 
         if ($wpdb->last_error) {
@@ -186,14 +190,15 @@ class Database extends Base {
             return $this->error('sql is required');
         }
 
-        $error = $this->validate_select_query($sql);
+        $clean = $this->strip_sql_comments($sql);
+        $error = $this->validate_select_query($clean);
         if ($error !== null) {
             return $this->error($error, 403);
         }
 
         global $wpdb;
 
-        $explain = (array) $wpdb->get_results('EXPLAIN ' . $wpdb->remove_placeholder_escape($sql), ARRAY_A);
+        $explain = (array) $wpdb->get_results('EXPLAIN ' . $wpdb->remove_placeholder_escape($clean), ARRAY_A);
 
         if ($wpdb->last_error) {
             return $this->error('EXPLAIN failed: ' . $wpdb->last_error, 500);
@@ -351,22 +356,38 @@ class Database extends Base {
     // -------------------------------------------------------------------------
 
     /**
-     * Validate a SQL string is a safe SELECT statement.
+     * Strip SQL comments from a query string.
+     *
+     * Handles:
+     *  - Double-dash line comments:   -- comment
+     *  - Standard block comments:     /* comment *\/
+     *  - MySQL conditional comments:  /*!50000 ... *\/ (treated same as block)
+     *
+     * The caller must validate AND execute the SAME returned string so that
+     * the keyword denylist cannot be bypassed by hiding tokens inside comments.
+     */
+    private function strip_sql_comments(string $sql): string {
+        // Strip line comments (-- to end of line)
+        $clean = preg_replace('/--[^\n]*/', '', $sql) ?? $sql;
+        // Strip block comments including MySQL conditional comments /*!...*/
+        $clean = preg_replace('#/\*.*?\*/#s', '', $clean) ?? $clean;
+        return trim($clean);
+    }
+
+    /**
+     * Validate a pre-stripped SQL string is a safe SELECT statement.
+     *
+     * Expects the output of strip_sql_comments() – do not pass raw user input.
      *
      * @return string|null Error message, or null if the query is allowed.
      */
     private function validate_select_query(string $sql): ?string {
-        // Strip comments
-        $clean = preg_replace('/--[^\n]*/', '', $sql) ?? $sql;
-        $clean = preg_replace('#/\*.*?\*/#s', '', $clean) ?? $clean;
-        $clean = trim($clean);
-
         // Reject multiple statements
-        if (str_contains($clean, ';')) {
+        if (str_contains($sql, ';')) {
             return 'Multiple statements (semicolons) are not allowed';
         }
 
-        $upper = strtoupper($clean);
+        $upper = strtoupper($sql);
 
         if (!str_starts_with($upper, 'SELECT')) {
             return 'Only SELECT statements are permitted';

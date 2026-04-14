@@ -63,7 +63,10 @@ final class IntegrationManager {
      */
     private function load_integrations(): void {
         global $wpdb;
-        $results = $wpdb->get_results("SELECT * FROM {$this->table_name}", ARRAY_A) ?: [];
+        $results = $wpdb->get_results(
+            $wpdb->prepare("SELECT * FROM {$this->table_name} LIMIT %d", 1000),
+            ARRAY_A
+        ) ?: [];
 
         foreach ($results as $row) {
             $this->integrations[$row['integration_id']] = $this->hydrate($row);

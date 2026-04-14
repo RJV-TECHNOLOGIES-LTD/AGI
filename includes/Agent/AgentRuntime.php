@@ -75,7 +75,10 @@ final class AgentRuntime {
     private function load_running_agents(): void {
         global $wpdb;
         $results = $wpdb->get_results(
-            "SELECT * FROM {$this->table_name} WHERE status IN ('running', 'paused')",
+            $wpdb->prepare(
+                "SELECT * FROM {$this->table_name} WHERE status IN ('running', 'paused') LIMIT %d",
+                500
+            ),
             ARRAY_A
         ) ?: [];
 

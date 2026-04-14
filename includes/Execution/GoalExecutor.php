@@ -75,108 +75,127 @@ final class GoalExecutor {
         $failed_at = null;
         $checkpoints = [];
 
-        // Execute actions in sequence
-        foreach ($actions as $index => $action) {
-            // Create checkpoint before action
-            $checkpoint = $this->create_checkpoint($action);
-            $checkpoints[$index] = $checkpoint;
-            ExecutionLedger::instance()->append_event($executionId, 'action_checkpoint_created', [
-                'action_index' => $index,
-                'action_type' => (string) ($action['type'] ?? ''),
-            ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
+        try {
+            // Execute actions in sequence
+            foreach ($actions as $index => $action) {
+                // Create checkpoint before action
+                $checkpoint = $this->create_checkpoint($action);
+                $checkpoints[$index] = $checkpoint;
+                ExecutionLedger::instance()->append_event($executionId, 'action_checkpoint_created', [
+                    'action_index' => $index,
+                    'action_type' => (string) ($action['type'] ?? ''),
+                ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
 
-            // Check if action is permitted
-            if (!$this->gate->can($action['type'], $action)) {
-                $failed_at = $index;
-                $results[$index] = [
-                    'success' => false,
-                    'error' => 'Action not permitted',
-                    'action' => $action['type'],
-                ];
-                ExecutionLedger::instance()->append_event($executionId, 'action_denied', $results[$index], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id, 'status' => 'failed']);
-                break;
-            }
-
-            // Execute action
-            $result = $this->execute_action($action);
-            $results[$index] = $result;
-            ExecutionLedger::instance()->append_event($executionId, 'action_executed', [
-                'action_index' => $index,
-                'action_type' => (string) ($action['type'] ?? ''),
-                'result' => $result,
-            ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id, 'status' => (($result['success'] ?? false) ? 'recorded' : 'failed')]);
-
-            // Update progress
-            $this->active_goals[$goal_id]['actions_completed'] = $index + 1;
-
-            if (!$result['success']) {
-                $failed_at = $index;
-                break;
-            }
-
-            // Check post-action conditions
-            if (!empty($conditions['during'])) {
-                $during_check = $this->check_conditions($conditions['during']);
-                if (!$during_check['satisfied']) {
+                // Check if action is permitted
+                if (!$this->gate->can($action['type'], $action)) {
                     $failed_at = $index;
-                    $results[$index]['warning'] = 'During conditions failed';
+                    $results[$index] = [
+                        'success' => false,
+                        'error' => 'Action not permitted',
+                        'action' => $action['type'],
+                    ];
+                    ExecutionLedger::instance()->append_event($executionId, 'action_denied', $results[$index], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id, 'status' => 'failed']);
                     break;
                 }
+
+                // Execute action
+                $result = $this->execute_action($action);
+                $results[$index] = $result;
+                ExecutionLedger::instance()->append_event($executionId, 'action_executed', [
+                    'action_index' => $index,
+                    'action_type' => (string) ($action['type'] ?? ''),
+                    'result' => $result,
+                ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id, 'status' => (($result['success'] ?? false) ? 'recorded' : 'failed')]);
+
+                // Update progress
+                $this->active_goals[$goal_id]['actions_completed'] = $index + 1;
+
+                if (!$result['success']) {
+                    $failed_at = $index;
+                    break;
+                }
+
+                // Check post-action conditions
+                if (!empty($conditions['during'])) {
+                    $during_check = $this->check_conditions($conditions['during']);
+                    if (!$during_check['satisfied']) {
+                        $failed_at = $index;
+                        $results[$index]['warning'] = 'During conditions failed';
+                        break;
+                    }
+                }
             }
-        }
 
-        // Handle failure with rollback
-        if ($failed_at !== null && $rollback_on_failure) {
-            $rollback_result = $this->rollback($checkpoints, $failed_at);
-            $this->active_goals[$goal_id]['status'] = 'rolled_back';
-            $this->active_goals[$goal_id]['rollback'] = $rollback_result;
+            // Handle failure with rollback
+            if ($failed_at !== null && $rollback_on_failure) {
+                $rollback_result = $this->rollback($checkpoints, $failed_at);
+                $this->active_goals[$goal_id]['status'] = 'rolled_back';
+                $this->active_goals[$goal_id]['rollback'] = $rollback_result;
 
-            AuditLog::log('goal_failed', 'execution', 0, [
+                AuditLog::log('goal_failed', 'execution', 0, [
+                    'goal_id' => $goal_id,
+                    'failed_at_action' => $failed_at,
+                    'rolled_back' => $rollback_result['success'],
+                ], 2, 'error');
+                ExecutionLedger::instance()->complete_execution($executionId, false, [
+                    'goal_id' => $goal_id,
+                    'failed_at_action' => $failed_at,
+                    'rolled_back' => $rollback_result['success'],
+                ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
+
+                return [
+                    'success' => false,
+                    'goal_id' => $goal_id,
+                    'objective' => $objective,
+                    'failed_at_action' => $failed_at,
+                    'results' => $results,
+                    'rolled_back' => $rollback_result['success'],
+                ];
+            }
+
+            // Check post-conditions
+            $postcondition_check = $this->check_conditions($conditions['post'] ?? []);
+
+            $this->active_goals[$goal_id]['status'] = $postcondition_check['satisfied'] ? 'completed' : 'completed_with_warnings';
+            $this->active_goals[$goal_id]['completed_at'] = gmdate('c');
+
+            AuditLog::log('goal_completed', 'execution', 0, [
                 'goal_id' => $goal_id,
-                'failed_at_action' => $failed_at,
-                'rolled_back' => $rollback_result['success'],
-            ], 2, 'error');
-            ExecutionLedger::instance()->complete_execution($executionId, false, [
+                'objective' => $objective,
+                'actions_completed' => count($results),
+                'postconditions_satisfied' => $postcondition_check['satisfied'],
+            ], 2);
+            ExecutionLedger::instance()->complete_execution($executionId, $failed_at === null, [
                 'goal_id' => $goal_id,
-                'failed_at_action' => $failed_at,
-                'rolled_back' => $rollback_result['success'],
+                'actions_completed' => count($results),
+                'postconditions' => $postcondition_check,
             ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
 
             return [
-                'success' => false,
+                'success' => $failed_at === null,
                 'goal_id' => $goal_id,
                 'objective' => $objective,
-                'failed_at_action' => $failed_at,
                 'results' => $results,
-                'rolled_back' => $rollback_result['success'],
+                'postconditions' => $postcondition_check,
             ];
+
+        } catch (\Throwable $e) {
+            // Ensure the ExecutionLedger record is always finalised even if an
+            // unexpected exception escapes the action loop (e.g. from a condition
+            // check or AuditLog call), preventing permanently-orphaned "running"
+            // records that would block future goal executions.
+            $this->active_goals[$goal_id]['status'] = 'error';
+            AuditLog::log('goal_exception', 'execution', 0, [
+                'goal_id'   => $goal_id,
+                'error'     => $e->getMessage(),
+                'completed' => count($results),
+            ], 1, 'error');
+            ExecutionLedger::instance()->complete_execution($executionId, false, [
+                'goal_id' => $goal_id,
+                'error'   => $e->getMessage(),
+            ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
+            throw $e;
         }
-
-        // Check post-conditions
-        $postcondition_check = $this->check_conditions($conditions['post'] ?? []);
-
-        $this->active_goals[$goal_id]['status'] = $postcondition_check['satisfied'] ? 'completed' : 'completed_with_warnings';
-        $this->active_goals[$goal_id]['completed_at'] = gmdate('c');
-
-        AuditLog::log('goal_completed', 'execution', 0, [
-            'goal_id' => $goal_id,
-            'objective' => $objective,
-            'actions_completed' => count($results),
-            'postconditions_satisfied' => $postcondition_check['satisfied'],
-        ], 2);
-        ExecutionLedger::instance()->complete_execution($executionId, $failed_at === null, [
-            'goal_id' => $goal_id,
-            'actions_completed' => count($results),
-            'postconditions' => $postcondition_check,
-        ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
-
-        return [
-            'success' => $failed_at === null,
-            'goal_id' => $goal_id,
-            'objective' => $objective,
-            'results' => $results,
-            'postconditions' => $postcondition_check,
-        ];
     }
 
     /**

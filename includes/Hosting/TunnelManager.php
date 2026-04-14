@@ -365,6 +365,17 @@ final class TunnelManager {
 
     private function ensure_binary(): array {
         if (file_exists($this->binary_path) && is_executable($this->binary_path)) {
+            // Verify the resolved path stays within the expected work directory
+            // to guard against symlink-based path traversal attacks.
+            $real_binary = realpath($this->binary_path);
+            $real_dir    = realpath($this->work_dir);
+            if ($real_binary === false || $real_dir === false ||
+                !str_starts_with($real_binary, $real_dir . DIRECTORY_SEPARATOR)) {
+                AuditLog::log('tunnel_binary_path_invalid', 'hosting', 0,
+                    ['binary_path' => $this->binary_path], 4);
+                return ['success' => false, 'error' => 'Binary path failed confinement check'];
+            }
+
             $check = $this->verify_binary_integrity();
             if ($check['verified'] || $check['reason'] === 'no_stored_hash') {
                 return ['success' => true];

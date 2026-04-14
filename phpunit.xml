@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         failOnWarning="true"
+         failOnRisky="true">
+
+    <testsuites>
+        <testsuite name="RJV AGI Bridge">
+            <directory>tests/</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage>
+        <include>
+            <directory suffix=".php">includes/</directory>
+        </include>
+        <exclude>
+            <file>includes/Plugin.php</file>
+            <file>includes/Installer.php</file>
+            <file>includes/Admin/Dashboard.php</file>
+        </exclude>
+    </coverage>
+
+    <php>
+        <const name="RJV_AGI_TEST" value="true"/>
+    </php>
+</phpunit>

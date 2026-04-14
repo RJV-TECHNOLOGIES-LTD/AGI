@@ -1083,7 +1083,7 @@ class EmailMarketing extends Base {
         $offset = ($page - 1) * $pp;
 
         $table = $wpdb->prefix . 'newsletter_emails';
-        if (!$wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+        if (!$wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table))) {
             return $this->error('Newsletter emails table not found', 503);
         }
 
@@ -1181,7 +1181,7 @@ class EmailMarketing extends Base {
             'sent_campaigns'       => 0,
         ];
 
-        if ($wpdb->get_var("SHOW TABLES LIKE '{$email_table}'")) {
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $email_table))) {
             $stats['total_campaigns'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$email_table} WHERE type = 'message'");
             $stats['sent_campaigns']  = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$email_table} WHERE type = 'message' AND status = 'sent'");
         }
