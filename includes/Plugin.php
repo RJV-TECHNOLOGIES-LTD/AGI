@@ -76,7 +76,6 @@ final class Plugin {
              'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
              'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
              'API/WooCommerce', 'API/Forms', 'API/Cache', 'API/ACF', 'API/EmailMarketing',
-             'API/LocalHosting', 'API/CloudflareManager', 'API/ExternalPlatforms', 'API/AutoProvision',
              'Admin/Dashboard',
          ];
 
@@ -98,6 +97,7 @@ final class Plugin {
              'Automation/ProvisioningOrchestrator',
              'Hosting/TunnelManager', 'Hosting/TunnelHealthMonitor',
              'Integrations/CloudflareAPI', 'Integrations/GoogleServices', 'Integrations/MicrosoftServices',
+             'API/LocalHosting', 'API/CloudflareManager', 'API/ExternalPlatforms', 'API/AutoProvision',
         ];
 
         $all_files = array_merge($core_files, $enterprise_files);

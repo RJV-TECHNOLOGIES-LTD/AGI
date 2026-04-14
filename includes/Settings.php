@@ -16,8 +16,8 @@ final class Settings {
         'api_key'              => ['type' => 'string',  'default' => ''],
         'allowed_ips'          => ['type' => 'string',  'default' => ''],
         'rate_limit'           => ['type' => 'int',     'default' => 600,  'min' => 0,    'max' => 10000],
-        'replay_protection'    => ['type' => 'bool',    'default' => false],
-        'named_keys'           => ['type' => 'array',   'default' => []],
+        'replay_protection'    => ['type' => 'bool',    'default' => false],  // reject replayed requests via nonce window
+        'named_keys'           => ['type' => 'array',   'default' => []],     // per-named-key credentials issued via /auth/keys
 
         // AI providers
         'default_model'        => ['type' => 'enum',    'default' => 'anthropic', 'values' => ['openai', 'anthropic', 'google']],
