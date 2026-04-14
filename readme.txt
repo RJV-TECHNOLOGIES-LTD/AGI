@@ -4,7 +4,7 @@ Tags: ai, api, automation, openai, anthropic, claude, gpt, seo, content-generati
 Requires at least: 6.4
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 3.1.0
+Stable tag: 3.2.0
 License: Proprietary
 License URI: https://rjvtechnologies.com/license
 
@@ -75,6 +75,9 @@ The plugin doesn't limit you - it's already the super car. The AGI Platform adds
 * Enterprise control-plane governance endpoints
 * Environment-specific capability overrides
 * SLO telemetry, request trace IDs, and drift baselines
+* API contract/deprecation headers and upgrade safety status
+* Typed policy rules and deterministic execution ledger replay
+* Security/compliance controls (key rotation chain, legal hold, export snapshot)
 
 **Security & Compliance**
 * Rate limiting and IP allowlisting
@@ -140,6 +143,14 @@ The audit log is insert-only with no update or delete API. It records timestamps
 
 == Changelog ==
 
+= 3.2.0 =
+* NEW: Foundation hardening with architecture audit and API contract/deprecation manager
+* NEW: Upgrade safety framework with compatibility report, rollback guard, and migration history
+* NEW: Typed policy rules (allow/deny/approve/escalate) with deterministic conflict resolution
+* NEW: Deterministic execution ledger with immutable hash chain and replay endpoints
+* NEW: Compliance baseline APIs (threat controls, legal hold, secret rotation chain, export snapshot)
+* NEW: Observability alerts, anomaly/error-budget reporting, and release gate telemetry
+
 = 3.1.0 =
 * NEW: Enterprise Control Plane API for program scope, policy governance, capabilities, and observability
 * NEW: Runtime Policy Engine with deny routes and approval guardrails
@@ -177,5 +188,5 @@ The audit log is insert-only with no update or delete API. It records timestamps
 
 == Upgrade Notice ==
 
-= 3.1.0 =
-Enterprise control-plane release adding governance, reliability observability, and environment-aware capability management with backward compatibility.
+= 3.2.0 =
+Enterprise hardening release adding contract/deprecation governance, upgrade safety, typed policy routing, deterministic execution ledger, compliance controls, and reliability release gates.

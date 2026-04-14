@@ -1,6 +1,6 @@
 # RJV AGI Bridge — WordPress Plugin
 
-[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://rjvtechnologies.com/agi-bridge)
+[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](https://rjvtechnologies.com/agi-bridge)
 [![PHP](https://img.shields.io/badge/PHP-8.1%2B-purple.svg)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-6.4%2B-blue.svg)](https://wordpress.org)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
@@ -170,6 +170,15 @@ The RJV AGI Bridge is not a feature-based add-on, chatbot, or content generator.
 - Reliability telemetry with SLO metrics and request trace IDs
 - Configuration drift detection and baseline snapshots
 - Milestone tracking with definition-of-done metadata
+
+#### Enterprise Hardening Program (NEW in v3.2)
+- Architecture/route/module audit reporting wired to runtime code paths
+- Contract manager with deprecation and sunset response headers
+- Upgrade safety framework with compatibility checks and migration history
+- Typed policy rules (allow/deny/approve/escalate) with conflict resolution
+- Deterministic execution ledger with immutable hash chain and replay support
+- Security/compliance controls for threat model, legal hold, and key rotation chain
+- Reliability alerts, anomaly detection, error-budget tracking, and release gates
 
 ### Dual AI Integration
 - **OpenAI** (GPT-4.1-mini default) and **Anthropic** (Claude Sonnet default)

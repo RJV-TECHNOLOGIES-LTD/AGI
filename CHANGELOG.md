@@ -2,6 +2,35 @@
 
 All notable changes to the RJV AGI Bridge plugin will be documented in this file.
 
+## [3.2.0] - 2026-04-14
+
+### Added
+- Foundation hardening controls:
+  - Architecture/route/module audit report (`/program/audit`)
+  - Contract/deprecation manager (`/governance/contracts`, `/governance/deprecations`) with runtime `Deprecation`/`Sunset` headers
+  - Upgrade safety framework (`/governance/upgrade/status`) with compatibility checks, migration history, and rollback guard state
+- Typed governance policy rules (`allow`, `deny`, `approve`, `escalate`) with deterministic conflict resolution and policy evaluation audit trails
+- Deterministic execution ledger with immutable hash chaining and replay endpoints:
+  - `/execution/ledger`
+  - `/execution/ledger/{execution_id}`
+- Security/compliance baseline API:
+  - threat controls
+  - compliance controls
+  - legal hold workflow
+  - secret rotation chain integrity
+  - compliance snapshot export
+- Reliability industrialization APIs:
+  - anomaly detection
+  - error-budget monitoring
+  - active alert feed
+  - remediation playbooks
+  - release gate telemetry
+
+### Improved
+- Capability governance now supports plan-level overrides and explicit context/provenance in effective capability resolution
+- Goal and agent execution paths now emit deterministic ledger records for replayable enterprise traceability
+- Policy approval path now supports escalation-specific approval routing
+
 ## [3.1.0] - 2026-04-14
 
 ### Added
