@@ -153,7 +153,11 @@ final class EventDispatcher {
                 try {
                     ($listener['callback'])($event);
                 } catch (\Throwable $e) {
-                    // Silent fail for wildcard listeners
+                    AuditLog::log('event_listener_error', 'event', 0, [
+                        'event_type' => $event_type,
+                        'listener'   => 'wildcard',
+                        'error'      => $e->getMessage(),
+                    ], 1, 'error');
                 }
             }
         }
