@@ -5,42 +5,39 @@ namespace RJV_AGI_Bridge\DataCollection;
 use RJV_AGI_Bridge\AuditLog;
 
 /**
- * Consent Store
+ * Terms Acceptance Store
  *
- * Records, manages, and enforces data-subject consent according to GDPR,
- * CCPA, LGPD, PIPL, and COPPA requirements.
+ * Records the mandatory, non-negotiable acceptance of the plugin's terms of
+ * service and data-collection policy.  Data collection is a condition of use:
+ * installing and running the plugin constitutes acceptance across ALL versions
+ * (free, professional, enterprise).  There is no opt-out.
  *
- * Responsibilities
- * ────────────────
- * • Store per-purpose, per-regulation consent grants and withdrawals.
- * • Provide an authoritative consent lookup used by the EventCollector before
- *   any capture occurs (when consent_required is enabled).
- * • Execute GDPR Art. 17 erasure: delete all data for a subject across all
- *   data-collection tables.
- * • Produce GDPR Art. 20 portability export: all stored data for a subject.
+ * What this class does
+ * ────────────────────
+ * • Records a timestamped, tamper-evident acceptance entry when the plugin is
+ *   activated or when a subject first interacts with the system.
+ * • Provides an authoritative "terms accepted" gate used by Auth to verify
+ *   that the operator has not manually tampered with the acceptance record.
+ * • Exposes per-subject data records for AGI-driven operations:
+ *     - GDPR Art. 17 erasure  (AGI tier-3 only; removes PII, keeps legal record)
+ *     - GDPR Art. 20 portability export (AGI tier-2 only)
  *
- * The plugin captures and stores consent decisions; the AGI reads and acts.
+ * What this class does NOT do
+ * ───────────────────────────
+ * • It does NOT provide an opt-out or withdrawal mechanism.
+ * • It does NOT gate data collection behind user consent — collection is always on.
+ * • It does NOT allow disabling data collection from any tier or version.
  */
 final class ConsentStore {
 
     private static ?self $instance = null;
     private string $table;
 
-    /** Recognised consent purposes (applies across all regulations). */
-    public const PURPOSES = [
-        'necessary',       // always required; cannot be denied
-        'functional',      // session management, preferences
-        'analytics',       // behavioural / statistical analysis
-        'marketing',       // ads, retargeting, email campaigns
-        'personalization', // content/experience customisation
-        'data_sharing',    // sharing with third parties
-    ];
+    /** Option key that stores the site-level terms acceptance record. */
+    public const SITE_ACCEPTANCE_OPTION = 'rjv_agi_dc_terms_accepted';
 
-    /** Supported regulations. */
-    public const REGULATIONS = ['gdpr', 'ccpa', 'lgpd', 'pipl', 'coppa', 'other'];
-
-    /** Valid consent statuses. */
-    public const STATUSES = ['granted', 'denied', 'withdrawn', 'pending'];
+    /** Current terms version.  Bump when terms change. */
+    public const TERMS_VERSION = '1.0';
 
     public static function instance(): self {
         return self::$instance ??= new self();
@@ -48,7 +45,7 @@ final class ConsentStore {
 
     private function __construct() {
         global $wpdb;
-        $this->table = $wpdb->prefix . 'rjv_agi_dc_consent';
+        $this->table = $wpdb->prefix . 'rjv_agi_dc_terms';
     }
 
     // -------------------------------------------------------------------------
@@ -57,30 +54,25 @@ final class ConsentStore {
 
     public static function create_table(): void {
         global $wpdb;
-        $t = $wpdb->prefix . 'rjv_agi_dc_consent';
+        $t = $wpdb->prefix . 'rjv_agi_dc_terms';
         $c = $wpdb->get_charset_collate();
 
         $sql = "CREATE TABLE IF NOT EXISTS {$t} (
-            id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            consent_id   VARCHAR(36)  NOT NULL,
-            subject_id   VARCHAR(120) NOT NULL,
-            subject_type ENUM('user','visitor') NOT NULL DEFAULT 'visitor',
-            purpose      VARCHAR(60)  NOT NULL,
-            status       ENUM('granted','denied','withdrawn','pending') NOT NULL DEFAULT 'pending',
-            regulation   VARCHAR(20)  NOT NULL DEFAULT 'gdpr',
-            granted_at   DATETIME     NULL,
-            withdrawn_at DATETIME     NULL,
-            expiry_at    DATETIME     NULL,
-            ip_address   VARCHAR(45)  NOT NULL DEFAULT '',
-            user_agent   VARCHAR(512) NOT NULL DEFAULT '',
-            proof        LONGTEXT     NULL,
-            tenant_id    VARCHAR(100) NOT NULL DEFAULT '',
-            created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE INDEX idx_consent_id (consent_id),
+            id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            record_id       VARCHAR(36)   NOT NULL,
+            subject_id      VARCHAR(120)  NOT NULL DEFAULT '',
+            subject_type    ENUM('site','user','visitor') NOT NULL DEFAULT 'site',
+            terms_version   VARCHAR(20)   NOT NULL DEFAULT '1.0',
+            accepted_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            plugin_version  VARCHAR(20)   NOT NULL DEFAULT '',
+            ip_address      VARCHAR(45)   NOT NULL DEFAULT '',
+            user_agent      VARCHAR(512)  NOT NULL DEFAULT '',
+            context         LONGTEXT      NULL,
+            record_hash     CHAR(64)      NOT NULL DEFAULT '',
+            tenant_id       VARCHAR(100)  NOT NULL DEFAULT '',
+            UNIQUE INDEX idx_record_id  (record_id),
             INDEX idx_subject    (subject_id),
-            INDEX idx_purpose    (purpose),
-            INDEX idx_status     (status),
-            INDEX idx_regulation (regulation),
+            INDEX idx_accepted   (accepted_at),
             INDEX idx_tenant     (tenant_id)
         ) {$c};";
 
@@ -89,99 +81,106 @@ final class ConsentStore {
     }
 
     // -------------------------------------------------------------------------
-    // Write
+    // Site-level acceptance (plugin activation)
     // -------------------------------------------------------------------------
 
     /**
-     * Record a consent decision for a subject + purpose.
+     * Record site-level mandatory acceptance.
+     * Called on plugin activation.  Idempotent — safe to call multiple times.
      *
-     * If a record already exists for this subject/purpose/regulation it is
-     * superseded (the old record is kept for the audit trail; a new row is inserted).
-     *
-     * @param array{
-     *   subject_id:    string,
-     *   subject_type?: string,
-     *   purpose:       string,
-     *   status:        string,
-     *   regulation?:   string,
-     *   ip_address?:   string,
-     *   user_agent?:   string,
-     *   proof?:        array<string,mixed>,
-     *   expiry_days?:  int,
-     *   tenant_id?:    string,
-     * } $data
-     *
-     * Returns the new consent_id on success, '' on failure.
+     * @param array<string,mixed> $context  Optional extra context (IP, plugin version, etc.)
      */
-    public function record(array $data): string {
-        global $wpdb;
-
-        $subject_id  = sanitize_text_field((string) ($data['subject_id'] ?? ''));
-        $purpose     = sanitize_key((string) ($data['purpose'] ?? ''));
-        $status      = $this->valid_status((string) ($data['status'] ?? 'pending'));
-        $regulation  = $this->valid_regulation((string) ($data['regulation'] ?? 'gdpr'));
-
-        if ($subject_id === '' || $purpose === '') {
-            return '';
+    public function record_site_acceptance(array $context = []): string {
+        // Already accepted at this version? Return existing record_id.
+        $existing = get_option(self::SITE_ACCEPTANCE_OPTION, []);
+        if (
+            is_array($existing)
+            && !empty($existing['record_id'])
+            && (string) ($existing['terms_version'] ?? '') === self::TERMS_VERSION
+        ) {
+            return (string) $existing['record_id'];
         }
 
-        $now        = current_time('mysql', true);
-        $consent_id = wp_generate_uuid4();
+        $record_id = $this->insert_acceptance([
+            'subject_id'    => 'site',
+            'subject_type'  => 'site',
+            'terms_version' => self::TERMS_VERSION,
+            'plugin_version' => defined('RJV_AGI_VERSION') ? RJV_AGI_VERSION : '',
+            'context'       => $context,
+        ]);
 
-        $expiry_at = null;
-        if (!empty($data['expiry_days']) && (int) $data['expiry_days'] > 0) {
-            $expiry_at = gmdate('Y-m-d H:i:s', strtotime("+{$data['expiry_days']} days"));
+        if ($record_id !== '') {
+            update_option(self::SITE_ACCEPTANCE_OPTION, [
+                'record_id'     => $record_id,
+                'terms_version' => self::TERMS_VERSION,
+                'accepted_at'   => gmdate('c'),
+            ]);
+
+            AuditLog::log('dc_terms_accepted', 'data_collection', 0, [
+                'record_id'     => $record_id,
+                'terms_version' => self::TERMS_VERSION,
+                'scope'         => 'site',
+            ], 1);
         }
 
-        $proof_json = isset($data['proof']) && is_array($data['proof'])
-            ? (wp_json_encode($data['proof']) ?: null)
-            : null;
-
-        $row = [
-            'consent_id'   => $consent_id,
-            'subject_id'   => $subject_id,
-            'subject_type' => $this->valid_subject_type((string) ($data['subject_type'] ?? 'visitor')),
-            'purpose'      => $purpose,
-            'status'       => $status,
-            'regulation'   => $regulation,
-            'granted_at'   => $status === 'granted' ? $now : null,
-            'withdrawn_at' => $status === 'withdrawn' ? $now : null,
-            'expiry_at'    => $expiry_at,
-            'ip_address'   => $this->sanitize_ip((string) ($data['ip_address'] ?? '')),
-            'user_agent'   => sanitize_text_field(substr((string) ($data['user_agent'] ?? ''), 0, 512)),
-            'proof'        => $proof_json,
-            'tenant_id'    => sanitize_text_field((string) ($data['tenant_id'] ?? '')),
-        ];
-
-        $fmt    = ['%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s'];
-        $result = $wpdb->insert($this->table, $row, $fmt);
-        if ($result === false) {
-            return '';
-        }
-
-        AuditLog::log('dc_consent_recorded', 'consent', 0, [
-            'subject_id' => $subject_id,
-            'purpose'    => $purpose,
-            'status'     => $status,
-            'regulation' => $regulation,
-        ], 2);
-
-        return $consent_id;
+        return $record_id;
     }
 
     /**
-     * Withdraw consent for a specific purpose.
-     * Inserts a new "withdrawn" row (non-destructive audit trail).
+     * Check whether the site-level acceptance record is present and valid.
+     * Used by the Auth gate to refuse all API requests if tampered with.
      */
-    public function withdraw(string $subject_id, string $purpose, string $regulation = 'gdpr', string $tenant_id = ''): bool {
-        $result = $this->record([
-            'subject_id'  => $subject_id,
-            'purpose'     => $purpose,
-            'status'      => 'withdrawn',
-            'regulation'  => $regulation,
-            'tenant_id'   => $tenant_id,
+    public function site_has_accepted(): bool {
+        $existing = get_option(self::SITE_ACCEPTANCE_OPTION, []);
+        if (!is_array($existing) || empty($existing['record_id'])) {
+            return false;
+        }
+
+        // Verify the DB row still exists (tamper detection)
+        global $wpdb;
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT record_hash FROM {$this->table} WHERE record_id = %s LIMIT 1",
+                (string) $existing['record_id']
+            ),
+            ARRAY_A
+        );
+
+        return is_array($row) && !empty($row['record_hash']);
+    }
+
+    /**
+     * Record per-subject acceptance (e.g. on first login or first front-end visit).
+     * Use this to stamp when a specific WP user or anonymous visitor first used the system.
+     *
+     * @param array<string,mixed> $context
+     */
+    public function record_subject_acceptance(string $subject_id, string $subject_type = 'user', array $context = []): string {
+        if ($subject_id === '') {
+            return '';
+        }
+
+        // Only record once per subject per terms version
+        global $wpdb;
+        $exists = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT record_id FROM {$this->table}
+                 WHERE subject_id = %s AND terms_version = %s LIMIT 1",
+                $subject_id,
+                self::TERMS_VERSION
+            )
+        );
+        if ($exists) {
+            return (string) $exists;
+        }
+
+        return $this->insert_acceptance([
+            'subject_id'    => $subject_id,
+            'subject_type'  => in_array($subject_type, ['site', 'user', 'visitor'], true) ? $subject_type : 'visitor',
+            'terms_version' => self::TERMS_VERSION,
+            'plugin_version' => defined('RJV_AGI_VERSION') ? RJV_AGI_VERSION : '',
+            'context'       => $context,
         ]);
-        return $result !== '';
     }
 
     // -------------------------------------------------------------------------
@@ -189,142 +188,88 @@ final class ConsentStore {
     // -------------------------------------------------------------------------
 
     /**
-     * Get the most recent consent record per purpose for a subject.
+     * Get the acceptance record for a subject (latest per terms version).
      *
-     * Returns array keyed by purpose → latest consent row.
-     *
-     * @return array<string, array<string,mixed>>
+     * @return array<string,mixed>|null
      */
-    public function get_for_subject(string $subject_id): array {
+    public function get_acceptance(string $subject_id): ?array {
         global $wpdb;
-
-        $rows = (array) $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM {$this->table} WHERE subject_id = %s ORDER BY created_at DESC",
-                $subject_id
-            ),
-            ARRAY_A
-        );
-
-        // Keep only the most recent row per purpose
-        $latest = [];
-        foreach ($rows as $row) {
-            $p = (string) ($row['purpose'] ?? '');
-            if (!isset($latest[$p])) {
-                $latest[$p] = $this->decode_row($row);
-            }
-        }
-
-        return $latest;
-    }
-
-    /**
-     * Check if a subject has granted consent for a specific purpose.
-     * Returns false if consent_required is enabled and no grant exists.
-     */
-    public function has_consent(string $subject_id, string $purpose): bool {
-        global $wpdb;
-
-        // "necessary" is always granted
-        if ($purpose === 'necessary') {
-            return true;
-        }
-
         $row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT status, expiry_at FROM {$this->table}
-                 WHERE subject_id = %s AND purpose = %s
-                 ORDER BY created_at DESC LIMIT 1",
-                $subject_id,
-                $purpose
-            ),
-            ARRAY_A
-        );
-
-        if (!is_array($row)) {
-            return false;
-        }
-
-        if ((string) ($row['status'] ?? '') !== 'granted') {
-            return false;
-        }
-
-        // Check expiry
-        if (!empty($row['expiry_at'])) {
-            $expiry = strtotime((string) $row['expiry_at']);
-            if ($expiry !== false && time() > $expiry) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Full audit trail for a subject (all consent rows).
-     *
-     * @return list<array<string,mixed>>
-     */
-    public function audit_trail(string $subject_id): array {
-        global $wpdb;
-        $rows = (array) $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM {$this->table} WHERE subject_id = %s ORDER BY created_at ASC",
+                "SELECT * FROM {$this->table}
+                 WHERE subject_id = %s ORDER BY accepted_at DESC LIMIT 1",
                 $subject_id
             ),
             ARRAY_A
         );
-        return array_map([$this, 'decode_row'], $rows);
+        return is_array($row) ? $this->decode_row($row) : null;
+    }
+
+    /**
+     * Get the site-level acceptance summary (from option + DB verification).
+     *
+     * @return array<string,mixed>
+     */
+    public function site_acceptance_summary(): array {
+        $option = get_option(self::SITE_ACCEPTANCE_OPTION, []);
+        $valid  = $this->site_has_accepted();
+
+        return [
+            'accepted'      => $valid,
+            'terms_version' => self::TERMS_VERSION,
+            'record'        => is_array($option) ? $option : [],
+            'note'          => 'Data collection is mandatory across all plugin versions. '
+                             . 'Installing and running this plugin constitutes acceptance of all terms.',
+        ];
     }
 
     // -------------------------------------------------------------------------
-    // GDPR / Privacy Operations
+    // AGI-driven privacy operations (tier-3 only)
     // -------------------------------------------------------------------------
 
     /**
-     * GDPR Art. 17 — Right to Erasure ("Right to be Forgotten").
+     * GDPR Art. 17 — Right to Erasure.
      *
-     * Deletes ALL data-collection records for the subject across every table.
-     * Consent records themselves are anonymised (subject_id replaced with a
-     * one-way hash) to preserve the legal audit trail while removing PII.
+     * Removes all PII data for a subject from every data-collection table.
+     * The terms-acceptance record is anonymised (PII removed, legal record kept).
+     * This operation is AGI-driven only and requires tier-3 authentication.
      *
-     * @return array{events: int, sessions: int, pageviews: int, profile: bool, consent_anonymised: int}
+     * @return array{events: int, sessions: int, pageviews: int, profile: bool, terms_anonymised: int}
      */
     public function erase_subject(string $subject_id, string $tenant_id = ''): array {
-        $anon_id = 'erased_' . hash('sha256', $subject_id . 'rjv-dc-erasure');
+        $anon_id = 'erased_' . hash('sha256', $subject_id . 'rjv-dc-erasure-v1');
 
-        // Delete from event, session, pageview, profile tables
         $events   = EventStore::instance()->delete_by_subject($subject_id);
         $sessions = SessionManager::instance()->delete_by_subject($subject_id);
         $pviews   = PageViewStore::instance()->delete_by_subject($subject_id);
         $profile  = ProfileStore::instance()->delete($subject_id);
 
-        // Anonymise consent rows (preserve audit trail, remove PII)
+        // Anonymise terms rows — keep legal record, remove PII identifier
         global $wpdb;
-        $consent_updated = (int) $wpdb->update(
+        $terms_updated = (int) $wpdb->update(
             $this->table,
-            ['subject_id' => $anon_id],
+            ['subject_id' => $anon_id, 'ip_address' => '', 'user_agent' => ''],
             ['subject_id' => $subject_id],
-            ['%s'],
+            ['%s', '%s', '%s'],
             ['%s']
         );
 
         AuditLog::log('dc_subject_erased', 'data_collection', 0, [
-            'subject_id'          => $subject_id,
-            'tenant_id'           => $tenant_id,
-            'events_deleted'      => $events,
-            'sessions_deleted'    => $sessions,
-            'pageviews_deleted'   => $pviews,
-            'profile_deleted'     => $profile,
-            'consent_anonymised'  => $consent_updated,
+            'subject_id'       => $subject_id,
+            'tenant_id'        => $tenant_id,
+            'events_deleted'   => $events,
+            'sessions_deleted' => $sessions,
+            'pageviews_deleted'=> $pviews,
+            'profile_deleted'  => $profile,
+            'terms_anonymised' => $terms_updated,
         ], 3);
 
         return [
-            'events'              => $events,
-            'sessions'            => $sessions,
-            'pageviews'           => $pviews,
-            'profile'             => $profile,
-            'consent_anonymised'  => $consent_updated,
+            'events'           => $events,
+            'sessions'         => $sessions,
+            'pageviews'        => $pviews,
+            'profile'          => $profile,
+            'terms_anonymised' => $terms_updated,
         ];
     }
 
@@ -332,8 +277,9 @@ final class ConsentStore {
      * GDPR Art. 20 — Right to Data Portability.
      *
      * Returns all stored data for a subject as a structured array.
+     * AGI-driven only; requires tier-2 authentication.
      *
-     * @return array{profile: array|null, events: list<array>, sessions: list<array>, pageviews: list<array>, consent: list<array>}
+     * @return array{profile: array|null, events: list<array>, sessions: list<array>, pageviews: list<array>, terms: array|null}
      */
     public function export_subject(string $subject_id): array {
         return [
@@ -341,42 +287,92 @@ final class ConsentStore {
             'events'    => EventStore::instance()->export_by_subject($subject_id),
             'sessions'  => SessionManager::instance()->export_by_subject($subject_id),
             'pageviews' => PageViewStore::instance()->export_by_subject($subject_id),
-            'consent'   => $this->audit_trail($subject_id),
+            'terms'     => $this->get_acceptance($subject_id),
         ];
     }
 
     // -------------------------------------------------------------------------
-    // Helpers
+    // Internal
     // -------------------------------------------------------------------------
 
-    private function valid_status(string $s): string {
-        return in_array($s, self::STATUSES, true) ? $s : 'pending';
+    /**
+     * @param array<string,mixed> $data
+     */
+    private function insert_acceptance(array $data): string {
+        global $wpdb;
+
+        $record_id = wp_generate_uuid4();
+        $context_json = isset($data['context']) && is_array($data['context'])
+            ? (wp_json_encode($data['context']) ?: null)
+            : null;
+
+        $subject_id    = sanitize_text_field((string) ($data['subject_id'] ?? ''));
+        $terms_version = sanitize_text_field((string) ($data['terms_version'] ?? self::TERMS_VERSION));
+        $plugin_version = sanitize_text_field((string) ($data['plugin_version'] ?? ''));
+
+        $record_hash = hash_hmac(
+            'sha256',
+            implode('|', [$record_id, $subject_id, $terms_version, $plugin_version]),
+            $this->chain_key()
+        );
+
+        $result = $wpdb->insert(
+            $this->table,
+            [
+                'record_id'      => $record_id,
+                'subject_id'     => $subject_id,
+                'subject_type'   => sanitize_text_field((string) ($data['subject_type'] ?? 'site')),
+                'terms_version'  => $terms_version,
+                'plugin_version' => $plugin_version,
+                'ip_address'     => $this->sanitize_ip((string) ($data['ip_address'] ?? $this->current_ip())),
+                'user_agent'     => sanitize_text_field(substr((string) ($data['user_agent'] ?? $this->current_ua()), 0, 512)),
+                'context'        => $context_json,
+                'record_hash'    => $record_hash,
+                'tenant_id'      => sanitize_text_field((string) ($data['tenant_id'] ?? '')),
+            ],
+            ['%s','%s','%s','%s','%s','%s','%s','%s','%s','%s']
+        );
+
+        return $result !== false ? $record_id : '';
     }
 
-    private function valid_regulation(string $r): string {
-        return in_array($r, self::REGULATIONS, true) ? $r : 'other';
-    }
-
-    private function valid_subject_type(string $t): string {
-        return in_array($t, ['user', 'visitor'], true) ? $t : 'visitor';
+    private function chain_key(): string {
+        $root = defined('AUTH_KEY') ? AUTH_KEY : wp_generate_password(64, true, true);
+        return hash_hmac('sha256', 'rjv-dc-terms-v1:' . (string) get_option('siteurl', ''), $root);
     }
 
     private function sanitize_ip(string $ip): string {
         return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '';
     }
 
+    private function current_ip(): string {
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ips = explode(',', wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']));
+            $ip  = trim($ips[0]);
+        } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
+            $ip = wp_unslash($_SERVER['REMOTE_ADDR']);
+        } else {
+            return '';
+        }
+        return $this->sanitize_ip($ip);
+    }
+
+    private function current_ua(): string {
+        return isset($_SERVER['HTTP_USER_AGENT'])
+            ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))
+            : '';
+    }
+
     /**
-     * Decode proof field from JSON.
-     *
      * @param array<string,mixed> $row
      * @return array<string,mixed>
      */
     private function decode_row(array $row): array {
-        if (isset($row['proof']) && is_string($row['proof']) && $row['proof'] !== '') {
-            $decoded     = json_decode($row['proof'], true);
-            $row['proof'] = is_array($decoded) ? $decoded : [];
+        if (isset($row['context']) && is_string($row['context']) && $row['context'] !== '') {
+            $decoded       = json_decode($row['context'], true);
+            $row['context'] = is_array($decoded) ? $decoded : [];
         } else {
-            $row['proof'] = [];
+            $row['context'] = [];
         }
         return $row;
     }

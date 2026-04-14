@@ -103,6 +103,34 @@ if (!function_exists('add_filter')) {
     function add_filter(string $tag, callable $function_to_add, int $priority = 10, int $accepted_args = 1): true { return true; }
 }
 
+if (!function_exists('wp_generate_uuid4')) {
+    function wp_generate_uuid4(): string {
+        return sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            random_int(0, 0xffff), random_int(0, 0xffff),
+            random_int(0, 0xffff),
+            random_int(0, 0x0fff) | 0x4000,
+            random_int(0, 0x3fff) | 0x8000,
+            random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff)
+        );
+    }
+}
+
+if (!function_exists('sanitize_email')) {
+    function sanitize_email(string $email): string {
+        return filter_var($email, FILTER_SANITIZE_EMAIL) ?: '';
+    }
+}
+
+if (!function_exists('is_ssl')) {
+    function is_ssl(): bool { return false; }
+}
+
+if (!function_exists('wp_parse_url')) {
+    function wp_parse_url(string $url, int $component = -1): mixed {
+        return parse_url($url, $component);
+    }
+}
+
 // ── Autoloader ────────────────────────────────────────────────────────────────
 
 spl_autoload_register(function (string $class): void {
