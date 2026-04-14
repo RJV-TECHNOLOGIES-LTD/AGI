@@ -115,11 +115,22 @@ class Installer {
             'api_key' => wp_generate_password(64, false),
 
             // AI Provider Configuration
-            'openai_key' => '',
-            'anthropic_key' => '',
-            'default_model' => 'anthropic',
+            'openai_key'   => '',
+            'openai_org'   => '',
             'openai_model' => 'gpt-4.1-mini',
+            'anthropic_key'   => '',
             'anthropic_model' => 'claude-sonnet-4-20250514',
+            'google_key'   => '',
+            'google_model' => 'gemini-2.5-pro',
+            'default_model' => 'anthropic',
+
+            // AI behaviour
+            'ai_max_tokens'           => 4096,
+            'ai_temperature'          => 0.3,
+            'ai_retry_attempts'       => 3,
+            'ai_circuit_threshold'    => 5,
+            'ai_timeout_seconds'      => 120,
+            'ai_monthly_token_budget' => 0,
 
             // Rate Limiting
             'rate_limit' => 600,
@@ -307,6 +318,18 @@ class Installer {
 
             // Observability config baseline (per-tenant)
             'config_baseline' => [],
+
+            // ── Runtime-state seeds (prevent false on first read) ────────────────
+            'chain_key_fallback'   => '',   // AuditLog HMAC root; auto-generated on first use
+            'tunnel_binary_sha256' => '',   // TunnelManager: verified binary hash
+            'limited_ai_daily'     => 10,   // AccessControl: calls/day for limited tier
+            'custom_role_mappings' => [],   // AccessControl: WP role → capability tier overrides
+            'configured_tenants'   => [],   // TenantIsolation: explicitly configured tenants
+            'active_agents'        => [],   // CapabilityGate: running agent snapshot
+            'integrations'         => [],   // CapabilityGate: active integration snapshot
+            'design_tokens'        => [],   // DesignSystemController: persisted token values
+            'last_security_scan'   => [],   // SecurityMonitor: most recent scan results
+            'tools_jobs'           => [],   // Tools API: async job status store
         ];
 
         foreach ($defaults as $k => $v) {

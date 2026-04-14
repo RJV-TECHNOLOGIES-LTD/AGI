@@ -151,6 +151,38 @@ final class Settings {
 
         // Provisioning runtime state
         'provision_summary' => ['type' => 'string', 'default' => ''],
+
+        // ── Runtime state (written internally; listed here for type-safety and discoverability) ──
+
+        // AuditLog HMAC chain: fallback key when AUTH_KEY is absent (auto-generated)
+        'chain_key_fallback'  => ['type' => 'string', 'default' => '', 'secret' => true],
+
+        // TunnelManager: SHA-256 of the verified cloudflared binary
+        'tunnel_binary_sha256' => ['type' => 'string', 'default' => ''],
+
+        // AccessControl: daily AI call limit for the "limited" capability tier
+        'limited_ai_daily'    => ['type' => 'int', 'default' => 10, 'min' => 0, 'max' => 10000],
+
+        // AccessControl: custom WordPress role → capability tier mappings
+        'custom_role_mappings' => ['type' => 'array', 'default' => []],
+
+        // TenantIsolation: explicitly configured external tenants (non-multisite)
+        'configured_tenants'  => ['type' => 'array', 'default' => []],
+
+        // CapabilityGate: runtime snapshot of active agent records
+        'active_agents'       => ['type' => 'array', 'default' => []],
+
+        // CapabilityGate: runtime snapshot of active integration records
+        'integrations'        => ['type' => 'array', 'default' => []],
+
+        // DesignSystemController: persisted design token values
+        'design_tokens'       => ['type' => 'array', 'default' => []],
+
+        // SecurityMonitor: result payload of the most recent security scan
+        'last_security_scan'  => ['type' => 'array', 'default' => []],
+
+        // Tools API: async job status store
+        'tools_jobs'          => ['type' => 'array', 'default' => []],
     ];
 
     // -------------------------------------------------------------------------
