@@ -44,7 +44,7 @@ class Users extends Base {
         $res=wp_update_user($u); if(is_wp_error($res)) return $this->error($res->get_error_message(),500);
         if(isset($d['role'])) {
             $transition = $this->apply_role_transition($id, sanitize_key((string)$d['role']), (string)($d['reason'] ?? 'profile_update'));
-            if (is_wp_error($transition)) return $transition;
+            if ($transition !== true) return $transition;
         }
         $this->log('update_user','user',$id,['fields'=>array_keys($d)],3);
         $user=get_user_by('ID',$id); if(!$user) return $this->error('User unavailable after update',500);
@@ -114,7 +114,7 @@ class Users extends Base {
         $d=(array)$r->get_json_params(); $target=sanitize_key((string)($d['role'] ?? ''));
         if($target==='') return $this->error('role required');
         $result = $this->apply_role_transition($id, $target, (string)($d['reason'] ?? 'role_transition'));
-        if (is_wp_error($result)) return $result;
+        if ($result !== true) return $result;
         $updated=get_user_by('ID',$id); if(!$updated) return $this->error('Not found',404);
         return $this->success(['updated'=>true,'user'=>$this->format_user($updated)]);
     }

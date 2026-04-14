@@ -816,7 +816,7 @@ final class Plugin {
             ];
         }
 
-        if ($method === 'DELETE' || $force || str_contains($route, '/delete')) {
+        if ($method === 'DELETE' || $force || preg_match('#/delete(?:/|$)#', $route) === 1) {
             return [
                 'class' => 'destructive_action',
                 'reason' => 'Destructive or force operations require explicit approval',
