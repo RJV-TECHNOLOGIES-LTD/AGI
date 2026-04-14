@@ -118,6 +118,10 @@ class Users extends Base {
         $updated=get_user_by('ID',$id); if(!$updated) return $this->error('Not found',404);
         return $this->success(['updated'=>true,'user'=>$this->format_user($updated)]);
     }
+    /**
+     * Applies a role transition safely.
+     * Returns true on success or WP_Error when the transition is not allowed.
+     */
     private function apply_role_transition(int $user_id, string $target_role, string $reason): bool|\WP_Error {
         global $wp_roles;
         if(!isset(($wp_roles?->roles ?? [])[$target_role])) return $this->error('Invalid role');

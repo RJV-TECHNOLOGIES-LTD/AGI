@@ -101,11 +101,15 @@ class Tools extends Base {
         $real=realpath($path); if($real===false||!is_readable($real)) throw new \RuntimeException('Invalid import path');
         $upload=wp_upload_dir(); $base=realpath((string)$upload['basedir']);
         if($base===false) throw new \RuntimeException('Uploads directory unavailable');
-        $basePrefix=rtrim($base,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
-        if($real!==$base && strpos($real,$basePrefix)!==0) throw new \RuntimeException('Import path must be inside uploads directory');
+        if(!$this->is_inside_base_path($real,$base)) throw new \RuntimeException('Import path must be inside uploads directory');
         $json=file_get_contents($real); if($json===false) throw new \RuntimeException('Failed reading import file');
         $decoded=json_decode($json,true); if(!is_array($decoded)) throw new \RuntimeException('Invalid import package');
         return $decoded;
+    }
+    private function is_inside_base_path(string $path, string $base): bool {
+        $normalizedPath=untrailingslashit(wp_normalize_path($path));
+        $normalizedBase=untrailingslashit(wp_normalize_path($base));
+        return $normalizedPath===$normalizedBase || str_starts_with($normalizedPath,$normalizedBase.'/');
     }
     private function get_jobs(): array { $jobs=get_option('rjv_agi_tools_jobs',[]); return is_array($jobs)?$jobs:[]; }
     private function set_job(string $job_id, array $changes): void {
