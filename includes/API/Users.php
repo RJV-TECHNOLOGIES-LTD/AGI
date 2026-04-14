@@ -120,9 +120,9 @@ class Users extends Base {
     }
     /**
      * Applies a role transition safely.
-     * Returns true on success or WP_Error when the transition is not allowed.
+     * Returns true on success or WP_Error on failure.
      */
-    private function apply_role_transition(int $user_id, string $target_role, string $reason): bool|\WP_Error {
+    private function apply_role_transition(int $user_id, string $target_role, string $reason): true|\WP_Error {
         global $wp_roles;
         if(!isset(($wp_roles?->roles ?? [])[$target_role])) return $this->error('Invalid role');
         $user=new \WP_User($user_id); if(!$user->exists()) return $this->error('Not found',404);

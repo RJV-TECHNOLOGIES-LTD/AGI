@@ -107,8 +107,10 @@ class Tools extends Base {
         return $decoded;
     }
     private function is_inside_base_path(string $path, string $base): bool {
-        $normalizedPath=untrailingslashit(wp_normalize_path($path));
-        $normalizedBase=untrailingslashit(wp_normalize_path($base));
+        $realPath=realpath($path); $realBase=realpath($base);
+        if($realPath===false||$realBase===false) return false;
+        $normalizedPath=untrailingslashit(wp_normalize_path($realPath));
+        $normalizedBase=untrailingslashit(wp_normalize_path($realBase));
         return $normalizedPath===$normalizedBase || str_starts_with($normalizedPath,$normalizedBase.'/');
     }
     private function get_jobs(): array { $jobs=get_option('rjv_agi_tools_jobs',[]); return is_array($jobs)?$jobs:[]; }
