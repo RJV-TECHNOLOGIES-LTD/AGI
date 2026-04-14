@@ -5,7 +5,15 @@ All notable changes to the RJV AGI Bridge plugin will be documented in this file
 ## [Unreleased]
 
 ### Added
-- Core default WordPress capability expansion:
+- **Google Gemini AI provider** (`AI/Google.php`): Full Gemini 2.5 Pro / 2.0 Flash support via the Generative Language API. Implements the `Provider` interface with system-instruction mapping, generation config (max tokens, temperature, JSON mode), per-request token tracking via `usageMetadata`, permanent vs. transient error classification, and integrated audit logging. The `Router` now activates the Gemini provider when a `google_key` is configured, completing the three-provider chain (OpenAI → Anthropic → Google) with automatic fallback.
+- **Expanded `Settings::SCHEMA`** with 70+ previously unschema'd settings covering: API security (`replay_protection`, `named_keys`), AI response caching (`ai_response_cache_ttl`), reliability alert thresholds (`alert_*`), threat-detector tuning (`threat_block_score`, `threat_ban_score`, `threat_ban_ttl`, `threat_detector_mode`), feature flags (`event_streaming`, `design_system_enabled`, `multi_tenant_enabled`, `performance_monitoring`, `security_scan_enabled`), platform connection (`platform_url`, `tenant_id`, `tenant_secret`), Cloudflare/Tunnel (`cloudflare_*`, `tunnel_*`), Google OAuth/analytics (`google_client_*`, `ga4_*`, `gtm_*`, `google_ads_*`), Microsoft/Azure (`microsoft_*`, `clarity_*`, `bing_*`, `appinsights_*`), provisioning (`provision_*`), and all governance array types. All these settings now benefit from typed reads/writes and secret-redaction in `Settings::all()`.
+- **Explicit file-load manifest expanded**: `AI/Google`, `AI/Orchestrator`, `Security/SecretsVault`, `Automation/ProvisioningOrchestrator`, `Hosting/TunnelManager`, `Hosting/TunnelHealthMonitor`, `Integrations/CloudflareAPI`, `Integrations/GoogleServices`, `Integrations/MicrosoftServices` added to Plugin bootstrap load list.
+
+### Fixed
+- **`Installer::deactivate()` now clears all plugin cron events**: `rjv_agi_webhook_retry`, `rjv_agi_alert_check`, and `rjv_agi_tunnel_heartbeat` were not cleared on plugin deactivation, leaving orphaned scheduled hooks in WordPress.
+- **Removed duplicate rate-limiter from `Plugin::rate_limit()`**: The `rest_pre_dispatch` rate-limiter was a weaker, parallel implementation that counted the same request against two separate buckets with different hashing schemes — effectively halving the actual permitted rate. The definitive per-key sliding-window rate limiter in `Auth::check_rate_limit()` is the sole enforcement point.
+
+
   - Posts/pages revision list + restore endpoints
   - Media metadata update and attachment metadata regeneration endpoint
   - Users lifecycle endpoints (create/delete) and role visibility endpoint

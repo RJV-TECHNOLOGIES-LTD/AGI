@@ -70,7 +70,7 @@ final class Plugin {
         // Load core files
         $core_files = [
             'Installer', 'Settings', 'Auth', 'AuditLog',
-            'AI/Provider', 'AI/OpenAI', 'AI/Anthropic', 'AI/Router',
+            'AI/Provider', 'AI/OpenAI', 'AI/Anthropic', 'AI/Google', 'AI/Router', 'AI/Orchestrator',
             'API/Base', 'API/Posts', 'API/Pages', 'API/Media', 'API/Users',
             'API/Options', 'API/Themes', 'API/Plugins', 'API/Menus', 'API/Widgets',
              'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
@@ -88,12 +88,15 @@ final class Plugin {
              'Execution/GoalExecutor', 'Execution/ApprovalWorkflow',
              'Execution/ExecutionLedger',
              'Agent/AgentRuntime',
-             'Security/ThreatDetector',
+             'Security/SecretsVault', 'Security/ThreatDetector',
              'Security/SecurityMonitor', 'Security/AccessControl', 'Security/ComplianceManager',
              'Integration/IntegrationManager', 'Integration/WebhookManager',
              'Performance/PerformanceOptimizer',
              'Governance/ProgramRegistry', 'Governance/PolicyEngine', 'Governance/ContractManager', 'Governance/UpgradeSafety',
              'Observability/ReliabilityMonitor',
+             'Automation/ProvisioningOrchestrator',
+             'Hosting/TunnelManager', 'Hosting/TunnelHealthMonitor',
+             'Integrations/CloudflareAPI', 'Integrations/GoogleServices', 'Integrations/MicrosoftServices',
         ];
 
         $all_files = array_merge($core_files, $enterprise_files);
@@ -118,7 +121,6 @@ final class Plugin {
         add_action('admin_menu', [$this->dashboard, 'register_menu']);
         add_action('admin_enqueue_scripts', [$this->dashboard, 'enqueue_assets']);
         add_filter('rest_pre_dispatch', [$this, 'pre_dispatch'], 5, 3);
-        add_filter('rest_pre_dispatch', [$this, 'rate_limit'], 10, 3);
         add_filter('rest_post_dispatch', [$this, 'post_dispatch'], 10, 3);
 
         // Schedule cron jobs
@@ -915,32 +917,6 @@ final class Plugin {
 
         $response = ReliabilityMonitor::instance()->attach_headers($response);
         return ContractManager::instance()->attach_headers($response, $route, (string) $request->get_method());
-    }
-
-    /**
-     * Rate limiting
-     */
-    public function rate_limit($result, $server, $request) {
-        $route = $request->get_route();
-        if (strpos($route, '/rjv-agi/v1/') !== 0) {
-            return $result;
-        }
-
-        $key = $request->get_header('X-RJV-AGI-Key');
-        if (empty($key)) {
-            return $result;
-        }
-
-        $tk = 'rjv_rl_' . hash('sha256', $key);
-        $count = (int) get_transient($tk);
-        $limit = (int) get_option('rjv_agi_rate_limit', 600);
-
-        if ($count >= $limit) {
-            return new \WP_Error('rate_limit', 'Rate limit exceeded', ['status' => 429]);
-        }
-
-        set_transient($tk, $count + 1, MINUTE_IN_SECONDS);
-        return $result;
     }
 
     /**

@@ -25,6 +25,9 @@ class Installer {
         wp_clear_scheduled_hook('rjv_agi_approval_cleanup');
         wp_clear_scheduled_hook('rjv_agi_platform_heartbeat');
         wp_clear_scheduled_hook('rjv_agi_security_scan');
+        wp_clear_scheduled_hook('rjv_agi_webhook_retry');
+        wp_clear_scheduled_hook('rjv_agi_alert_check');
+        wp_clear_scheduled_hook('rjv_agi_tunnel_heartbeat');
         flush_rewrite_rules();
     }
 
