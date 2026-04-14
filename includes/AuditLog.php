@@ -346,10 +346,11 @@ final class AuditLog {
      * This binds the key to the specific WordPress installation.
      */
     private static function chain_key(): string {
-        $root = defined('AUTH_KEY') ? AUTH_KEY : (string) get_option('rjv_agi_chain_key_fallback', '');
-        if ($root === '') {
-            // Generate and persist a fallback key (only used when AUTH_KEY is unavailable)
-            $root = get_option('rjv_agi_chain_key_fallback', '');
+        if (defined('AUTH_KEY') && AUTH_KEY !== '') {
+            $root = AUTH_KEY;
+        } else {
+            // Use a persistent fallback key when AUTH_KEY is unavailable.
+            $root = (string) get_option('rjv_agi_chain_key_fallback', '');
             if ($root === '') {
                 $root = bin2hex(random_bytes(32));
                 update_option('rjv_agi_chain_key_fallback', $root, false);

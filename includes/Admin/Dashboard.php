@@ -475,8 +475,10 @@ class Dashboard {
 
     public function settings(): void {
         if($_SERVER['REQUEST_METHOD']==='POST'&&check_admin_referer('rjv_s')){
-            foreach(['openai_key','anthropic_key','default_model','openai_model','anthropic_model','rate_limit','audit_enabled','allowed_ips','log_retention_days'] as $f)
+            foreach(['openai_key','anthropic_key','default_model','openai_model','anthropic_model','rate_limit','allowed_ips','log_retention_days'] as $f)
                 if(isset($_POST["rjv_{$f}"]))Settings::set($f,sanitize_textarea_field(wp_unslash($_POST["rjv_{$f}"])));
+            // Checkbox: absent from POST when unchecked — save explicitly as bool.
+            Settings::set('audit_enabled', isset($_POST['rjv_audit_enabled']) && $_POST['rjv_audit_enabled'] === '1');
             if(isset($_POST['rjv_regen']))Settings::set('api_key',wp_generate_password(64,false));
             echo '<div class="notice notice-success"><p>' . esc_html__('Settings saved.', 'rjv-agi-bridge') . '</p></div>';
         }$s=Settings::all(); ?>
@@ -488,7 +490,7 @@ class Dashboard {
 <tr><th><?php esc_html_e('OpenAI Model', 'rjv-agi-bridge'); ?></th><td><input name="rjv_openai_model" value="<?php echo esc_attr($s['openai_model']);?>" class="regular-text"></td></tr>
 <tr><th><?php esc_html_e('Anthropic Model', 'rjv-agi-bridge'); ?></th><td><input name="rjv_anthropic_model" value="<?php echo esc_attr($s['anthropic_model']);?>" class="regular-text"></td></tr>
 <tr><th><?php esc_html_e('Rate Limit/min', 'rjv-agi-bridge'); ?></th><td><input type="number" name="rjv_rate_limit" value="<?php echo esc_attr($s['rate_limit']);?>" min="1"></td></tr>
-<tr><th><?php esc_html_e('Audit Logging', 'rjv-agi-bridge'); ?></th><td><label><input type="checkbox" name="rjv_audit_enabled" value="1" <?php checked($s['audit_enabled'],'1');?>> <?php esc_html_e('Enable', 'rjv-agi-bridge'); ?></label></td></tr>
+<tr><th><?php esc_html_e('Audit Logging', 'rjv-agi-bridge'); ?></th><td><label><input type="checkbox" name="rjv_audit_enabled" value="1" <?php checked($s['audit_enabled'], true);?>> <?php esc_html_e('Enable', 'rjv-agi-bridge'); ?></label></td></tr>
 <tr><th><?php esc_html_e('Log Retention (days)', 'rjv-agi-bridge'); ?></th><td><input type="number" name="rjv_log_retention_days" value="<?php echo esc_attr($s['log_retention_days']??90);?>" min="1" max="365"><p class="description"><?php esc_html_e('Audit log entries older than this will be automatically deleted.', 'rjv-agi-bridge'); ?></p></td></tr>
 <tr><th><?php esc_html_e('IP Allowlist', 'rjv-agi-bridge'); ?></th><td><textarea name="rjv_allowed_ips" rows="3" class="large-text"><?php echo esc_textarea($s['allowed_ips']??'');?></textarea><p class="description"><?php esc_html_e('One IP per line. Leave empty to allow all.', 'rjv-agi-bridge'); ?></p></td></tr>
 <tr><th><?php esc_html_e('Regenerate Key', 'rjv-agi-bridge'); ?></th><td><label><input type="checkbox" name="rjv_regen" value="1"> <?php esc_html_e('Generate new API key on save', 'rjv-agi-bridge'); ?></label></td></tr>

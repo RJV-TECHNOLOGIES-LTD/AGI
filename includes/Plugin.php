@@ -164,6 +164,20 @@ final class Plugin {
      * Schedule cron jobs
      */
     private function schedule_cron_jobs(): void {
+        // Register custom cron intervals FIRST so they are available when
+        // wp_schedule_event() calls wp_get_schedules() to validate the interval name.
+        add_filter('cron_schedules', function (array $schedules): array {
+            $schedules['rjv_agi_five_minutes'] ??= [
+                'interval' => 300,
+                'display'  => 'Every 5 Minutes (RJV AGI)',
+            ];
+            $schedules['rjv_agi_fifteen_minutes'] ??= [
+                'interval' => 900,
+                'display'  => 'Every 15 Minutes (RJV AGI)',
+            ];
+            return $schedules;
+        });
+
         // Audit log cleanup
         if (!wp_next_scheduled('rjv_agi_log_cleanup')) {
             wp_schedule_event(time(), 'daily', 'rjv_agi_log_cleanup');
@@ -218,19 +232,6 @@ final class Plugin {
         }
         add_action('rjv_agi_alert_check', function () {
             ReliabilityMonitor::instance()->dispatch_alerts_if_needed();
-        });
-
-        // Register custom cron intervals if not already present
-        add_filter('cron_schedules', function (array $schedules): array {
-            $schedules['rjv_agi_five_minutes'] ??= [
-                'interval' => 300,
-                'display'  => 'Every 5 Minutes (RJV AGI)',
-            ];
-            $schedules['rjv_agi_fifteen_minutes'] ??= [
-                'interval' => 900,
-                'display'  => 'Every 15 Minutes (RJV AGI)',
-            ];
-            return $schedules;
         });
     }
 

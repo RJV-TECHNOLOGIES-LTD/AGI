@@ -300,7 +300,7 @@ final class DesignSystemController {
      * Enqueue design system styles
      */
     public function enqueue_design_system(): void {
-        if (Settings::get('design_system_enabled', '0') !== '1') {
+        if (!Settings::get_bool('design_system_enabled')) {
             return;
         }
 
@@ -312,7 +312,7 @@ final class DesignSystemController {
      * Enqueue admin design system styles
      */
     public function enqueue_admin_design_system(): void {
-        if (Settings::get('design_system_enabled', '0') !== '1') {
+        if (!Settings::get_bool('design_system_enabled')) {
             return;
         }
 

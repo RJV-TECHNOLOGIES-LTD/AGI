@@ -4,7 +4,6 @@ namespace RJV_AGI_Bridge\Execution;
 
 use RJV_AGI_Bridge\AuditLog;
 use RJV_AGI_Bridge\Bridge\CapabilityGate;
-use RJV_AGI_Bridge\Content\VersionManager;
 use RJV_AGI_Bridge\Execution\ExecutionLedger;
 
 /**
@@ -17,7 +16,6 @@ final class GoalExecutor {
     private static ?self $instance = null;
     private array $active_goals = [];
     private CapabilityGate $gate;
-    private VersionManager $versions;
 
     public static function instance(): self {
         return self::$instance ??= new self();
@@ -25,7 +23,6 @@ final class GoalExecutor {
 
     private function __construct() {
         $this->gate = CapabilityGate::instance();
-        $this->versions = VersionManager::instance();
     }
 
     /**
