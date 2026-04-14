@@ -19,17 +19,19 @@ class Pages extends Base {
         return $this->success(array_map(fn($p)=>['id'=>$p->ID,'title'=>$p->post_title,'slug'=>$p->post_name,'status'=>$p->post_status,'parent'=>$p->post_parent,'template'=>get_page_template_slug($p->ID)?:'default','permalink'=>get_permalink($p->ID)],$pages?:[]));
     }
     public function get(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
-        $p=get_post((int)$r['id']); if(!$p||$p->post_type!=='page') return $this->error('Not found',404);
+        $id=(int)$r['id']; $p=get_post($id); if(!$p||$p->post_type!=='page') return $this->not_found('page', $id);
         return $this->success(['id'=>$p->ID,'title'=>$p->post_title,'content'=>$p->post_content,'slug'=>$p->post_name,'status'=>$p->post_status,'template'=>get_page_template_slug($p->ID),'meta'=>get_post_meta($p->ID)]);
     }
     public function create(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
         $d=$r->get_json_params();$id=wp_insert_post(['post_type'=>'page','post_title'=>sanitize_text_field($d['title']??''),'post_content'=>wp_kses_post($d['content']??''),'post_status'=>sanitize_text_field($d['status']??'draft'),'post_parent'=>(int)($d['parent']??0)],true);
         if(is_wp_error($id)) return $this->error($id->get_error_message(),500);
         if(!empty($d['template'])) update_post_meta($id,'_wp_page_template',sanitize_text_field($d['template']));
-        $this->log('create_page','page',$id,[],2); return $this->success(['id'=>$id],201);
+        $this->log('create_page','page',$id,[],2);
+        return $this->success($this->with_links(['id'=>$id],'pages',$id,(string)get_permalink($id)),201);
     }
     public function update(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
-        $id=(int)$r['id'];$d=$r->get_json_params();$u=['ID'=>$id];
+        $id=(int)$r['id']; $p=get_post($id); if(!$p||$p->post_type!=='page') return $this->not_found('page', $id);
+        $d=$r->get_json_params(); $u=['ID'=>$id];
         if(isset($d['title']))$u['post_title']=sanitize_text_field($d['title']);if(isset($d['content']))$u['post_content']=wp_kses_post($d['content']);if(isset($d['status']))$u['post_status']=sanitize_text_field($d['status']);
         $res=wp_update_post($u,true);if(is_wp_error($res))return $this->error($res->get_error_message(),500);
         if(!empty($d['template']))update_post_meta($id,'_wp_page_template',sanitize_text_field($d['template']));
@@ -40,7 +42,7 @@ class Pages extends Base {
         wp_delete_post($id,$force); $this->log('delete_page','page',$id,['force'=>$force],3); return $this->success(['deleted'=>true,'force'=>$force]);
     }
     public function revisions(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
-        $id=(int)$r['id']; $p=get_post($id); if(!$p||$p->post_type!=='page') return $this->error('Not found',404);
+        $id=(int)$r['id']; $p=get_post($id); if(!$p||$p->post_type!=='page') return $this->not_found('page', $id);
         $revs=wp_get_post_revisions($id,['check_enabled'=>false]);
         $items=array_map(function(\WP_Post $rev): array {
             return ['id'=>$rev->ID,'parent'=>(int)$rev->post_parent,'author'=>(int)$rev->post_author,'date'=>$rev->post_date_gmt,'modified'=>$rev->post_modified_gmt,'title'=>$rev->post_title];
@@ -50,7 +52,7 @@ class Pages extends Base {
     public function restore_revision(\WP_REST_Request $r): \WP_REST_Response|\WP_Error {
         $id=(int)$r['id']; $revision_id=(int)$r['revision_id'];
         $post=get_post($id); $revision=get_post($revision_id);
-        if(!$post||$post->post_type!=='page') return $this->error('Not found',404);
+        if(!$post||$post->post_type!=='page') return $this->not_found('page', $id);
         if(!$revision||$revision->post_parent!==$id||$revision->post_type!=='revision') return $this->error('Revision not found',404);
         $restored=wp_restore_post_revision($revision_id);
         if(!$restored) return $this->error('Failed to restore revision',500);

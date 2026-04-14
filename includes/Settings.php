@@ -16,6 +16,8 @@ final class Settings {
         'api_key'              => ['type' => 'string',  'default' => ''],
         'allowed_ips'          => ['type' => 'string',  'default' => ''],
         'rate_limit'           => ['type' => 'int',     'default' => 600,  'min' => 0,    'max' => 10000],
+        'replay_protection'    => ['type' => 'bool',    'default' => false],  // reject replayed requests via nonce window
+        'named_keys'           => ['type' => 'array',   'default' => []],     // issued API credential records (name, tier, scope, expiry); managed via /auth/keys
 
         // AI providers
         'default_model'        => ['type' => 'enum',    'default' => 'anthropic', 'values' => ['openai', 'anthropic', 'google']],
@@ -28,23 +30,159 @@ final class Settings {
         'google_model'         => ['type' => 'string',  'default' => 'gemini-2.5-pro'],
 
         // AI behaviour
-        'ai_max_tokens'        => ['type' => 'int',     'default' => 4096,  'min' => 100,  'max' => 128000],
-        'ai_temperature'       => ['type' => 'float',   'default' => 0.3,   'min' => 0.0,  'max' => 2.0],
-        'ai_retry_attempts'    => ['type' => 'int',     'default' => 3,     'min' => 0,    'max' => 5],
-        'ai_circuit_threshold' => ['type' => 'int',     'default' => 5,     'min' => 1,    'max' => 20],
-        'ai_timeout_seconds'   => ['type' => 'int',     'default' => 120,   'min' => 10,   'max' => 600],
-        'ai_monthly_token_budget' => ['type' => 'int',  'default' => 0,     'min' => 0],
+        'ai_max_tokens'           => ['type' => 'int',   'default' => 4096,  'min' => 100,  'max' => 128000],
+        'ai_temperature'          => ['type' => 'float', 'default' => 0.3,   'min' => 0.0,  'max' => 2.0],
+        'ai_retry_attempts'       => ['type' => 'int',   'default' => 3,     'min' => 0,    'max' => 5],
+        'ai_circuit_threshold'    => ['type' => 'int',   'default' => 5,     'min' => 1,    'max' => 20],
+        'ai_timeout_seconds'      => ['type' => 'int',   'default' => 120,   'min' => 10,   'max' => 600],
+        'ai_monthly_token_budget' => ['type' => 'int',   'default' => 0,     'min' => 0],
+        'ai_response_cache_ttl'   => ['type' => 'int',   'default' => 300,   'min' => 0,    'max' => 86400],
 
         // Audit & observability
         'audit_enabled'        => ['type' => 'bool',    'default' => true],
         'log_retention_days'   => ['type' => 'int',     'default' => 90,   'min' => 1,    'max' => 3650],
 
+        // Reliability alerts
+        'alert_availability_min'  => ['type' => 'float', 'default' => 99.0,  'min' => 0.0,  'max' => 100.0],
+        'alert_latency_p95_max'   => ['type' => 'int',   'default' => 2000,  'min' => 0],
+        'alert_burn_rate_1h_max'  => ['type' => 'float', 'default' => 14.4,  'min' => 0.0],
+        'alert_email'             => ['type' => 'string', 'default' => ''],
+
+        // Security / threat detection
+        'threat_block_score'   => ['type' => 'int',  'default' => 70,       'min' => 0,  'max' => 500],
+        'threat_ban_score'     => ['type' => 'int',  'default' => 120,      'min' => 0,  'max' => 1000],
+        'threat_ban_ttl'       => ['type' => 'int',  'default' => 3600,     'min' => 60, 'max' => 86400],
+        'threat_detector_mode' => ['type' => 'enum', 'default' => 'enforce', 'values' => ['enforce', 'monitor']],
+        'security_scan_enabled'  => ['type' => 'bool', 'default' => true],
+
+        // Platform connection
+        'platform_url'         => ['type' => 'string', 'default' => 'https://platform.rjvtechnologies.com/api/v1'],
+        'tenant_id'            => ['type' => 'string', 'default' => ''],
+        'tenant_secret'        => ['type' => 'string', 'default' => '', 'secret' => true],
+
+        // Feature flags
+        'event_streaming'        => ['type' => 'bool', 'default' => false],
+        'design_system_enabled'  => ['type' => 'bool', 'default' => false],
+        'multi_tenant_enabled'   => ['type' => 'bool', 'default' => false],
+        'performance_monitoring' => ['type' => 'bool', 'default' => true],
+
+        // Cloudflare
+        'cloudflare_token'      => ['type' => 'string', 'default' => '', 'secret' => true],
+        'cloudflare_email'      => ['type' => 'string', 'default' => ''],
+        'cloudflare_api_key'    => ['type' => 'string', 'default' => '', 'secret' => true],
+        'cloudflare_account_id' => ['type' => 'string', 'default' => ''],
+
+        // Cloudflare Tunnel
+        'tunnel_enabled'      => ['type' => 'bool',   'default' => false],
+        'tunnel_mode'         => ['type' => 'enum',   'default' => 'quick', 'values' => ['quick', 'named']],
+        'tunnel_token'        => ['type' => 'string', 'default' => '', 'secret' => true],
+        'tunnel_hostname'     => ['type' => 'string', 'default' => ''],
+        'tunnel_original_url' => ['type' => 'string', 'default' => ''],
+        'tunnel_local_port'   => ['type' => 'int',    'default' => 80,  'min' => 1, 'max' => 65535],
+        'tunnel_auto_apply_url' => ['type' => 'bool', 'default' => false],
+
+        // Google OAuth / analytics
+        'google_client_id'      => ['type' => 'string', 'default' => ''],
+        'google_client_secret'  => ['type' => 'string', 'default' => '', 'secret' => true],
+        'google_redirect_uri'   => ['type' => 'string', 'default' => ''],
+        'google_access_token'   => ['type' => 'string', 'default' => '', 'secret' => true],
+        'google_refresh_token'  => ['type' => 'string', 'default' => '', 'secret' => true],
+        'ga4_measurement_id'    => ['type' => 'string', 'default' => ''],
+        'ga4_enabled'           => ['type' => 'bool',   'default' => false],
+        'gtm_container_id'      => ['type' => 'string', 'default' => ''],
+        'gtm_enabled'           => ['type' => 'bool',   'default' => false],
+        'google_ads_id'         => ['type' => 'string', 'default' => ''],
+        'google_ads_enabled'    => ['type' => 'bool',   'default' => false],
+        'gsc_verification'      => ['type' => 'string', 'default' => ''],
+
+        // Microsoft / Azure
+        'microsoft_client_id'     => ['type' => 'string', 'default' => ''],
+        'microsoft_client_secret' => ['type' => 'string', 'default' => '', 'secret' => true],
+        'microsoft_redirect_uri'  => ['type' => 'string', 'default' => ''],
+        'microsoft_access_token'  => ['type' => 'string', 'default' => '', 'secret' => true],
+        'microsoft_refresh_token' => ['type' => 'string', 'default' => '', 'secret' => true],
+        'clarity_project_id'      => ['type' => 'string', 'default' => ''],
+        'clarity_api_key'         => ['type' => 'string', 'default' => '', 'secret' => true],
+        'clarity_enabled'         => ['type' => 'bool',   'default' => false],
+        'bing_uet_tag_id'         => ['type' => 'string', 'default' => ''],
+        'bing_ads_enabled'        => ['type' => 'bool',   'default' => false],
+        'bing_developer_token'    => ['type' => 'string', 'default' => '', 'secret' => true],
+        'bing_customer_id'        => ['type' => 'string', 'default' => ''],
+        'bing_account_id'         => ['type' => 'string', 'default' => ''],
+        'bing_wmt_api_key'        => ['type' => 'string', 'default' => '', 'secret' => true],
+        'bing_verification'       => ['type' => 'string', 'default' => ''],
+        'appinsights_key'                => ['type' => 'string', 'default' => '', 'secret' => true],
+        'appinsights_connection_string'  => ['type' => 'string', 'default' => '', 'secret' => true],
+        'appinsights_enabled'            => ['type' => 'bool',   'default' => false],
+
+        // Provisioning
+        'provision_auto_start' => ['type' => 'bool',  'default' => false],
+        'provision_services'   => ['type' => 'array', 'default' => []],
+
         // Governance
-        'program_scope_taxonomy' => ['type' => 'array', 'default' => []],
-        'program_targets'        => ['type' => 'array', 'default' => []],
-        'program_milestones'     => ['type' => 'array', 'default' => []],
-        'policy_rules'           => ['type' => 'array', 'default' => []],
-        'capability_overrides'   => ['type' => 'array', 'default' => []],
+        'program_scope_taxonomy'   => ['type' => 'array', 'default' => []],
+        'program_targets'          => ['type' => 'array', 'default' => []],
+        'program_milestones'       => ['type' => 'array', 'default' => []],
+        'policy_rules'             => ['type' => 'array', 'default' => []],
+        'capability_overrides'     => ['type' => 'array', 'default' => []],
+        'capability_plan_overrides' => ['type' => 'array', 'default' => []],
+        'capability_tenant_overrides' => ['type' => 'array', 'default' => []],
+        'api_contract'             => ['type' => 'array', 'default' => []],
+        'api_deprecations'         => ['type' => 'array', 'default' => []],
+        'upgrade_history'          => ['type' => 'array', 'default' => []],
+        'upgrade_last'             => ['type' => 'array', 'default' => []],
+        'upgrade_lock'             => ['type' => 'array', 'default' => []],
+        'threat_model_controls'    => ['type' => 'array', 'default' => []],
+        'compliance_controls'      => ['type' => 'array', 'default' => []],
+        'secret_rotation_log'      => ['type' => 'array', 'default' => []],
+        'release_gate_thresholds'  => ['type' => 'array', 'default' => []],
+        'config_baseline'          => ['type' => 'array', 'default' => []],
+
+        // Observability: per-gate CI/CD test scores (written by external pipelines, read by release-gates check)
+        'gate_contract_tests'    => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_integration_tests' => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_e2e_tests'         => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_load_tests'        => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_chaos_tests'       => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+
+        // Cloudflare / tunnel runtime state (written by integration layer)
+        'cf_zone_id'       => ['type' => 'string', 'default' => ''],
+        'tunnel_url'       => ['type' => 'string', 'default' => ''],
+
+        // Provisioning runtime state
+        'provision_summary' => ['type' => 'string', 'default' => ''],
+
+        // ── Runtime state (written internally; listed here for type-safety and discoverability) ──
+
+        // AuditLog HMAC chain: fallback key when AUTH_KEY is absent (auto-generated)
+        'chain_key_fallback'  => ['type' => 'string', 'default' => '', 'secret' => true],
+
+        // TunnelManager: SHA-256 of the verified cloudflared binary
+        'tunnel_binary_sha256' => ['type' => 'string', 'default' => ''],
+
+        // AccessControl: daily AI call limit for the "limited" capability tier
+        'limited_ai_daily'    => ['type' => 'int', 'default' => 10, 'min' => 0, 'max' => 10000],   // max AI calls per day for the "limited" capability tier
+
+        // AccessControl: custom WordPress role → capability tier mappings
+        'custom_role_mappings' => ['type' => 'array', 'default' => []],
+
+        // TenantIsolation: explicitly configured external tenants (non-multisite)
+        'configured_tenants'  => ['type' => 'array', 'default' => []],
+
+        // CapabilityGate: runtime snapshot of active agent records
+        'active_agents'       => ['type' => 'array', 'default' => []],
+
+        // CapabilityGate: runtime snapshot of active integration records
+        'integrations'        => ['type' => 'array', 'default' => []],
+
+        // DesignSystemController: persisted design token values
+        'design_tokens'       => ['type' => 'array', 'default' => []],
+
+        // SecurityMonitor: result payload of the most recent security scan
+        'last_security_scan'  => ['type' => 'array', 'default' => []],
+
+        // Tools API: async job status store
+        'tools_jobs'          => ['type' => 'array', 'default' => []],
     ];
 
     // -------------------------------------------------------------------------

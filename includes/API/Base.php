@@ -51,7 +51,8 @@ abstract class Base {
         string  $message,
         int     $status  = 400,
         ?string $code    = null,
-        array   $data    = []
+        array   $data    = [],
+        string  $hint    = ''
     ): \WP_Error {
         $error_code = $code ?? match (true) {
             $status === 401 => 'unauthorized',
@@ -64,11 +65,70 @@ abstract class Base {
             default         => 'bad_request',
         };
 
+        if ($hint !== '') {
+            $data['hint'] = $hint;
+        }
+
         return new \WP_Error(
             $error_code,
             $message,
             array_merge(['status' => $status], $data)
         );
+    }
+
+    /**
+     * Return a 404 error with an auto-generated recovery hint for LLM callers.
+     *
+     * @param string $resource  Singular resource name (e.g. 'post', 'page', 'user').
+     * @param int    $id        The ID that was not found (0 = unknown).
+     */
+    protected function not_found(string $resource, int $id = 0): \WP_Error {
+        $label  = ucfirst($resource);
+        $plural = $resource . 's';
+        $hint   = "Use GET /wp-json/rjv-agi/v1/{$plural} to discover valid IDs.";
+        $msg    = $id > 0 ? "{$label} #{$id} not found." : "{$label} not found.";
+        return $this->error($msg, 404, 'not_found', [], $hint);
+    }
+
+    /**
+     * Attach HATEOAS-style `_links` to an entity response array.
+     *
+     * @param array  $data      Existing response data.
+     * @param string $resource  API resource slug (e.g. 'posts', 'pages').
+     * @param int    $id        Entity primary key.
+     * @param string $permalink Optional public-facing URL of the entity.
+     * @return array  $data with `_links` added.
+     */
+    protected function with_links(array $data, string $resource, int $id, string $permalink = ''): array {
+        $base = rest_url("rjv-agi/v1/{$resource}/{$id}");
+        $data['_links'] = array_filter([
+            'self'   => [['href' => $base]],
+            'view'   => $permalink !== '' ? [['href' => $permalink]] : null,
+            'edit'   => [['href' => admin_url("post.php?post={$id}&action=edit")]],
+            'delete' => [['href' => $base, 'method' => 'DELETE']],
+        ]);
+        return $data;
+    }
+
+    /**
+     * Attach AI metadata to a success response (token usage, model, cost, latency).
+     *
+     * @param \WP_REST_Response $response  Existing response object.
+     * @param array             $ai_result Result from Router::complete().
+     * @return \WP_REST_Response  Same response with `_ai_meta` appended to body.
+     */
+    protected function with_ai_meta(\WP_REST_Response $response, array $ai_result): \WP_REST_Response {
+        $body = (array) $response->get_data();
+        $body['_ai_meta'] = array_filter([
+            'model'      => $ai_result['model']      ?? null,
+            'provider'   => $ai_result['provider']   ?? null,
+            'tokens'     => $ai_result['tokens']      ?? null,
+            'cost_usd'   => $ai_result['cost_usd']    ?? null,
+            'latency_ms' => $ai_result['latency_ms']  ?? null,
+            'cached'     => $ai_result['cached']      ?? false,
+        ], fn($v) => $v !== null && $v !== false);
+        $response->set_data($body);
+        return $response;
     }
 
     /**

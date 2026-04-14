@@ -71,7 +71,7 @@ final class ComplianceManager {
     }
 
     public function rotate_secret(string $secret_key, string $new_secret, string $actor = 'system'): array {
-        $allowed = ['openai_key', 'anthropic_key', 'tenant_secret', 'api_key'];
+        $allowed = ['openai_key', 'anthropic_key', 'google_key', 'tenant_secret', 'api_key'];
         if (!in_array($secret_key, $allowed, true)) {
             return ['success' => false, 'error' => 'Secret key not rotatable'];
         }

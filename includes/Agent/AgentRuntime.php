@@ -75,7 +75,10 @@ final class AgentRuntime {
     private function load_running_agents(): void {
         global $wpdb;
         $results = $wpdb->get_results(
-            "SELECT * FROM {$this->table_name} WHERE status IN ('running', 'paused')",
+            $wpdb->prepare(
+                "SELECT * FROM {$this->table_name} WHERE status IN ('running', 'paused') LIMIT %d",
+                500
+            ),
             ARRAY_A
         ) ?: [];
 
@@ -126,6 +129,10 @@ final class AgentRuntime {
         ]);
 
         $agent = $this->get_agent($agent_id);
+
+        if (!$agent) {
+            return ['success' => false, 'error' => 'Agent record could not be persisted'];
+        }
 
         AuditLog::log('agent_deployed', 'agent', 0, [
             'agent_id' => $agent_id,

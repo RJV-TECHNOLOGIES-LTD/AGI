@@ -66,8 +66,7 @@ class Users extends Base {
         if($password==='') { $password=wp_generate_password(24,true,true); $generated=true; }
         wp_set_password($password,$id);
         if(!empty($d['send_reset_email'])) {
-            if(!function_exists('retrieve_password')) require_once ABSPATH.'wp-includes/user.php';
-            retrieve_password($user->user_login);
+            wp_retrieve_password($user->user_login);
         }
         $this->log('set_user_password','user',$id,['generated'=>$generated,'send_reset_email'=>!empty($d['send_reset_email'])],3);
         return $this->success(['updated'=>true,'id'=>$id,'generated'=>$generated,'password'=>$generated?$password:null]);

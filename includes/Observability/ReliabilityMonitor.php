@@ -225,10 +225,12 @@ final class ReliabilityMonitor {
         $budget = $this->error_budget_status();
         $burn   = $budget['burn_rate'] ?? [];
 
-        $avail_min   = (float) get_option('rjv_agi_alert_availability_min', 99.0);
-        $latency_max = (int)   get_option('rjv_agi_alert_latency_p95_max',  2000);
-        $burn_max    = (float) get_option('rjv_agi_alert_burn_rate_1h_max', 14.4);
-        $email       = (string) get_option('rjv_agi_alert_email', get_option('admin_email', ''));
+        $ti = TenantIsolation::instance();
+
+        $avail_min   = (float) $ti->get_option('rjv_agi_alert_availability_min', 99.0);
+        $latency_max = (int)   $ti->get_option('rjv_agi_alert_latency_p95_max',  2000);
+        $burn_max    = (float) $ti->get_option('rjv_agi_alert_burn_rate_1h_max', 14.4);
+        $email       = (string) $ti->get_option('rjv_agi_alert_email', get_option('admin_email', ''));
 
         $checks = [
             'low_availability' => [
@@ -410,7 +412,7 @@ final class ReliabilityMonitor {
             $alerts[] = ['type' => 'burn_rate_critical', 'severity' => 'critical',
                 'message' => sprintf('1h burn rate %.2f× – budget will be exhausted within the hour', (float) ($burn['1h'] ?? 0))];
         }
-        if ((float) ($slo['availability_pct'] ?? 100) < (float) get_option('rjv_agi_alert_availability_min', 99.0)) {
+        if ((float) ($slo['availability_pct'] ?? 100) < (float) TenantIsolation::instance()->get_option('rjv_agi_alert_availability_min', 99.0)) {
             $alerts[] = ['type' => 'low_availability', 'severity' => 'high',
                 'message' => 'Availability below configured SLO threshold'];
         }
@@ -437,14 +439,15 @@ final class ReliabilityMonitor {
     }
 
     public function release_gates_status(): array {
-        $thresholds = get_option('rjv_agi_release_gate_thresholds', []);
+        $ti         = TenantIsolation::instance();
+        $thresholds = $ti->get_option('rjv_agi_release_gate_thresholds', []);
         $thresholds = is_array($thresholds) ? $thresholds : [];
         $scores = [
-            'contract_tests' => (int) get_option('rjv_agi_gate_contract_tests', 100),
-            'integration_tests' => (int) get_option('rjv_agi_gate_integration_tests', 100),
-            'e2e_tests' => (int) get_option('rjv_agi_gate_e2e_tests', 100),
-            'load_tests' => (int) get_option('rjv_agi_gate_load_tests', 100),
-            'chaos_tests' => (int) get_option('rjv_agi_gate_chaos_tests', 100),
+            'contract_tests'    => (int) $ti->get_option('rjv_agi_gate_contract_tests', 100),
+            'integration_tests' => (int) $ti->get_option('rjv_agi_gate_integration_tests', 100),
+            'e2e_tests'         => (int) $ti->get_option('rjv_agi_gate_e2e_tests', 100),
+            'load_tests'        => (int) $ti->get_option('rjv_agi_gate_load_tests', 100),
+            'chaos_tests'       => (int) $ti->get_option('rjv_agi_gate_chaos_tests', 100),
         ];
         $map = [
             'contract_tests' => 'contract_tests_min',

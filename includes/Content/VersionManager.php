@@ -421,9 +421,12 @@ final class VersionManager {
             ));
 
             if (count($versions) > $max_versions_per_content) {
-                $to_delete = array_slice($versions, $max_versions_per_content);
-                $ids = implode(',', array_map('intval', $to_delete));
-                $deleted += (int) $wpdb->query("DELETE FROM {$this->table_name} WHERE id IN ({$ids})");
+                $to_delete    = array_slice($versions, $max_versions_per_content);
+                $placeholders = implode(',', array_fill(0, count($to_delete), '%d'));
+                // phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+                $deleted += (int) $wpdb->query(
+                    $wpdb->prepare("DELETE FROM {$this->table_name} WHERE id IN ({$placeholders})", ...$to_delete)
+                );
             }
         }
 

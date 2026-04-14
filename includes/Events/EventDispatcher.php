@@ -41,7 +41,7 @@ final class EventDispatcher {
 
         // User events
         add_action('wp_login', [$this, 'on_user_login'], 10, 2);
-        add_action('wp_logout', [$this, 'on_user_logout']);
+        add_action('wp_logout', [$this, 'on_user_logout'], 10, 1);
         add_action('user_register', [$this, 'on_user_register']);
         add_action('profile_update', [$this, 'on_profile_update'], 10, 3);
 
@@ -153,7 +153,11 @@ final class EventDispatcher {
                 try {
                     ($listener['callback'])($event);
                 } catch (\Throwable $e) {
-                    // Silent fail for wildcard listeners
+                    AuditLog::log('event_listener_error', 'event', 0, [
+                        'event_type' => $event_type,
+                        'listener'   => 'wildcard',
+                        'error'      => $e->getMessage(),
+                    ], 1, 'error');
                 }
             }
         }
@@ -244,8 +248,12 @@ final class EventDispatcher {
         ], 5);
     }
 
-    public function on_user_logout(): void {
-        $user_id = get_current_user_id();
+    public function on_user_logout(int $user_id = 0): void {
+        // WP 5.5+ passes the user ID directly; fall back to get_current_user_id()
+        // only when the hook was fired without the argument (edge-case compatibility).
+        if ($user_id === 0) {
+            $user_id = get_current_user_id();
+        }
         $this->dispatch('user.logout', [
             'user_id' => $user_id,
         ], 3);

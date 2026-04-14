@@ -92,7 +92,7 @@ class AutoProvision extends Base {
     /**
      * Start a new provisioning run.
      */
-    public function start(\WP_REST_Request $req): \WP_REST_Response {
+    public function start(\WP_REST_Request $req): \WP_REST_Response|\WP_Error {
         if (!$this->rate_limit_check('provision_start', 10, 3600)) {
             return $this->error('Rate limit exceeded. A maximum of 10 start requests per hour is allowed.', 429);
         }
@@ -123,7 +123,7 @@ class AutoProvision extends Base {
     /**
      * Resume a paused / failed run.
      */
-    public function resume(\WP_REST_Request $req): \WP_REST_Response {
+    public function resume(\WP_REST_Request $req): \WP_REST_Response|\WP_Error {
         if (!$this->rate_limit_check('provision_start', 10, 3600)) {
             return $this->error('Rate limit exceeded.', 429);
         }

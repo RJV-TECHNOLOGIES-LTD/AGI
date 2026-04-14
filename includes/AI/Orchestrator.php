@@ -128,11 +128,16 @@ final class Orchestrator {
         $results = [];
         $providers = ['anthropic', 'openai'];
 
-        // Query both providers in parallel (conceptually)
+        // Query both providers through the Router so circuit breakers, retry,
+        // token budget, and prompt-injection scrubbing are all applied.
         foreach ($providers as $provider) {
             $provider_instance = $this->router->get($provider);
             if ($provider_instance->is_configured()) {
-                $results[$provider] = $provider_instance->complete($system_prompt, $user_prompt, $options);
+                $results[$provider] = $this->router->complete(
+                    $system_prompt,
+                    $user_prompt,
+                    array_merge($options, ['provider' => $provider, 'no_fallback' => true])
+                );
             }
         }
 
@@ -340,7 +345,7 @@ final class Orchestrator {
             'quick_edit' => 'openai',
         ];
 
-        $preferred = $routing[$task_type] ?? (string) Settings::get('default_model', 'anthropic');
+        $preferred = $routing[$task_type] ?? Settings::get_string('default_model', 'anthropic');
 
         // Fall back if preferred provider not configured
         $provider = $this->router->get($preferred);

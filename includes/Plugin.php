@@ -70,12 +70,13 @@ final class Plugin {
         // Load core files
         $core_files = [
             'Installer', 'Settings', 'Auth', 'AuditLog',
-            'AI/Provider', 'AI/OpenAI', 'AI/Anthropic', 'AI/Router',
+            'AI/Provider', 'AI/OpenAI', 'AI/Anthropic', 'AI/Google', 'AI/Router', 'AI/Orchestrator',
             'API/Base', 'API/Posts', 'API/Pages', 'API/Media', 'API/Users',
             'API/Options', 'API/Themes', 'API/Plugins', 'API/Menus', 'API/Widgets',
              'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
              'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
              'API/WooCommerce', 'API/Forms', 'API/Cache', 'API/ACF', 'API/EmailMarketing',
+             'API/Schema',
              'Admin/Dashboard',
          ];
 
@@ -88,12 +89,16 @@ final class Plugin {
              'Execution/GoalExecutor', 'Execution/ApprovalWorkflow',
              'Execution/ExecutionLedger',
              'Agent/AgentRuntime',
-             'Security/ThreatDetector',
+             'Security/SecretsVault', 'Security/ThreatDetector',
              'Security/SecurityMonitor', 'Security/AccessControl', 'Security/ComplianceManager',
              'Integration/IntegrationManager', 'Integration/WebhookManager',
              'Performance/PerformanceOptimizer',
              'Governance/ProgramRegistry', 'Governance/PolicyEngine', 'Governance/ContractManager', 'Governance/UpgradeSafety',
              'Observability/ReliabilityMonitor',
+             'Automation/ProvisioningOrchestrator',
+             'Hosting/TunnelManager', 'Hosting/TunnelHealthMonitor',
+             'Integrations/CloudflareAPI', 'Integrations/GoogleServices', 'Integrations/MicrosoftServices',
+             'API/LocalHosting', 'API/CloudflareManager', 'API/ExternalPlatforms', 'API/AutoProvision',
         ];
 
         $all_files = array_merge($core_files, $enterprise_files);
@@ -118,7 +123,6 @@ final class Plugin {
         add_action('admin_menu', [$this->dashboard, 'register_menu']);
         add_action('admin_enqueue_scripts', [$this->dashboard, 'enqueue_assets']);
         add_filter('rest_pre_dispatch', [$this, 'pre_dispatch'], 5, 3);
-        add_filter('rest_pre_dispatch', [$this, 'rate_limit'], 10, 3);
         add_filter('rest_post_dispatch', [$this, 'post_dispatch'], 10, 3);
 
         // Schedule cron jobs
@@ -161,6 +165,20 @@ final class Plugin {
      * Schedule cron jobs
      */
     private function schedule_cron_jobs(): void {
+        // Register custom cron intervals FIRST so they are available when
+        // wp_schedule_event() calls wp_get_schedules() to validate the interval name.
+        add_filter('cron_schedules', function (array $schedules): array {
+            $schedules['rjv_agi_five_minutes'] ??= [
+                'interval' => 300,
+                'display'  => 'Every 5 Minutes (RJV AGI)',
+            ];
+            $schedules['rjv_agi_fifteen_minutes'] ??= [
+                'interval' => 900,
+                'display'  => 'Every 15 Minutes (RJV AGI)',
+            ];
+            return $schedules;
+        });
+
         // Audit log cleanup
         if (!wp_next_scheduled('rjv_agi_log_cleanup')) {
             wp_schedule_event(time(), 'daily', 'rjv_agi_log_cleanup');
@@ -216,19 +234,6 @@ final class Plugin {
         add_action('rjv_agi_alert_check', function () {
             ReliabilityMonitor::instance()->dispatch_alerts_if_needed();
         });
-
-        // Register custom cron intervals if not already present
-        add_filter('cron_schedules', function (array $schedules): array {
-            $schedules['rjv_agi_five_minutes'] ??= [
-                'interval' => 300,
-                'display'  => 'Every 5 Minutes (RJV AGI)',
-            ];
-            $schedules['rjv_agi_fifteen_minutes'] ??= [
-                'interval' => 900,
-                'display'  => 'Every 15 Minutes (RJV AGI)',
-            ];
-            return $schedules;
-        });
     }
 
     /**
@@ -266,6 +271,7 @@ final class Plugin {
             new API\CloudflareManager(),
             new API\ExternalPlatforms(),
             new API\AutoProvision(),
+            new API\Schema(),
         ];
 
         foreach ($core_controllers as $controller) {
@@ -791,6 +797,19 @@ final class Plugin {
             return $result;
         }
 
+        // ── Idempotency key: replay cached response for duplicate POST/PUT/PATCH ─
+        $idempotency_key = sanitize_text_field((string) $request->get_header('X-Idempotency-Key'));
+        $method = strtoupper($request->get_method());
+        if ($idempotency_key !== '' && in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
+            $idem_transient = 'rjv_idem_' . substr(hash('sha256', $idempotency_key), 0, 32);
+            $cached = get_transient($idem_transient);
+            if (is_array($cached)) {
+                $response = new \WP_REST_Response($cached['body'], $cached['status']);
+                $response->header('X-Idempotency-Replayed', 'true');
+                return $response;
+            }
+        }
+
         // ── ThreatDetector: inspect every inbound API request ─────────────────
         $threat = ThreatDetector::inspect($request);
         if (!$threat['allowed']) {
@@ -913,34 +932,24 @@ final class Plugin {
             return $response;
         }
 
+        // ── Idempotency: store successful response for 24 h so duplicates replay ─
+        $idempotency_key = sanitize_text_field((string) $request->get_header('X-Idempotency-Key'));
+        $method = strtoupper($request->get_method());
+        if ($idempotency_key !== '' && in_array($method, ['POST', 'PUT', 'PATCH'], true)
+            && $response instanceof \WP_REST_Response
+            && $response->get_status() >= 200 && $response->get_status() < 300
+        ) {
+            $idem_transient = 'rjv_idem_' . substr(hash('sha256', $idempotency_key), 0, 32);
+            if (get_transient($idem_transient) === false) {
+                set_transient($idem_transient, [
+                    'body'   => $response->get_data(),
+                    'status' => $response->get_status(),
+                ], DAY_IN_SECONDS);
+            }
+        }
+
         $response = ReliabilityMonitor::instance()->attach_headers($response);
         return ContractManager::instance()->attach_headers($response, $route, (string) $request->get_method());
-    }
-
-    /**
-     * Rate limiting
-     */
-    public function rate_limit($result, $server, $request) {
-        $route = $request->get_route();
-        if (strpos($route, '/rjv-agi/v1/') !== 0) {
-            return $result;
-        }
-
-        $key = $request->get_header('X-RJV-AGI-Key');
-        if (empty($key)) {
-            return $result;
-        }
-
-        $tk = 'rjv_rl_' . hash('sha256', $key);
-        $count = (int) get_transient($tk);
-        $limit = (int) get_option('rjv_agi_rate_limit', 600);
-
-        if ($count >= $limit) {
-            return new \WP_Error('rate_limit', 'Rate limit exceeded', ['status' => 429]);
-        }
-
-        set_transient($tk, $count + 1, MINUTE_IN_SECONDS);
-        return $result;
     }
 
     /**

@@ -589,7 +589,7 @@ class SEO extends Base {
         if ($plugin === 'yoast') {
             global $wpdb;
             $table = $wpdb->prefix . 'yoast_seo_links';
-            if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+            if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table))) {
                 $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE type = 'redirect'");
                 $rows  = $wpdb->get_results($wpdb->prepare(
                     "SELECT * FROM {$table} WHERE type = 'redirect' ORDER BY id DESC LIMIT %d OFFSET %d",
@@ -602,7 +602,7 @@ class SEO extends Base {
         // Fallback: check for Redirection plugin
         global $wpdb;
         $table = $wpdb->prefix . 'redirection_items';
-        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table))) {
             $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
             $rows  = $wpdb->get_results($wpdb->prepare(
                 "SELECT id, url, action_data, regex, enabled FROM {$table} ORDER BY id DESC LIMIT %d OFFSET %d",
@@ -650,7 +650,7 @@ class SEO extends Base {
         // Redirection plugin fallback
         global $wpdb;
         $table = $wpdb->prefix . 'redirection_items';
-        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table))) {
             $wpdb->insert($table, [
                 'url'           => $source,
                 'action_type'   => 'url',
@@ -677,7 +677,7 @@ class SEO extends Base {
         // Redirection plugin
         global $wpdb;
         $table = $wpdb->prefix . 'redirection_items';
-        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table))) {
             $update = [];
             if (isset($d['source'])) $update['url']         = sanitize_text_field($d['source']);
             if (isset($d['target'])) $update['action_data'] = esc_url_raw($d['target']);
@@ -703,7 +703,7 @@ class SEO extends Base {
 
         global $wpdb;
         $table = $wpdb->prefix . 'redirection_items';
-        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'")) {
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table))) {
             $wpdb->delete($table, ['id' => $id]);
             $this->log('seo_delete_redirect', 'seo', $id, ['plugin' => 'redirection'], 3);
             return $this->success(['deleted' => true]);

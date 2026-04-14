@@ -25,6 +25,9 @@ class Installer {
         wp_clear_scheduled_hook('rjv_agi_approval_cleanup');
         wp_clear_scheduled_hook('rjv_agi_platform_heartbeat');
         wp_clear_scheduled_hook('rjv_agi_security_scan');
+        wp_clear_scheduled_hook('rjv_agi_webhook_retry');
+        wp_clear_scheduled_hook('rjv_agi_alert_check');
+        wp_clear_scheduled_hook('rjv_agi_tunnel_heartbeat');
         flush_rewrite_rules();
     }
 
@@ -112,11 +115,22 @@ class Installer {
             'api_key' => wp_generate_password(64, false),
 
             // AI Provider Configuration
-            'openai_key' => '',
-            'anthropic_key' => '',
-            'default_model' => 'anthropic',
+            'openai_key'   => '',
+            'openai_org'   => '',
             'openai_model' => 'gpt-4.1-mini',
+            'anthropic_key'   => '',
             'anthropic_model' => 'claude-sonnet-4-20250514',
+            'google_key'   => '',
+            'google_model' => 'gemini-2.5-pro',
+            'default_model' => 'anthropic',
+
+            // AI behaviour
+            'ai_max_tokens'           => 4096,
+            'ai_temperature'          => 0.3,
+            'ai_retry_attempts'       => 3,
+            'ai_circuit_threshold'    => 5,
+            'ai_timeout_seconds'      => 120,
+            'ai_monthly_token_budget' => 0,
 
             // Rate Limiting
             'rate_limit' => 600,
@@ -284,6 +298,38 @@ class Installer {
             'alert_latency_p95_max'     => 2000,
             'alert_burn_rate_1h_max'    => 14.4,
             'alert_email'               => '',
+
+            // Release gate CI/CD test scores (external pipeline writes these)
+            'gate_contract_tests'    => 100,
+            'gate_integration_tests' => 100,
+            'gate_e2e_tests'         => 100,
+            'gate_load_tests'        => 100,
+            'gate_chaos_tests'       => 100,
+
+            // Capability per-tenant overrides
+            'capability_tenant_overrides' => [],
+
+            // Cloudflare / tunnel runtime state (written by integration layer)
+            'cf_zone_id'       => '',
+            'tunnel_url'       => '',
+
+            // Provisioning runtime state
+            'provision_summary' => '',
+
+            // Observability config baseline (per-tenant)
+            'config_baseline' => [],
+
+            // ── Runtime-state seeds (prevent false on first read) ────────────────
+            'chain_key_fallback'   => '',   // AuditLog HMAC root; left empty so AuditLog auto-generates and persists a random key on first write
+            'tunnel_binary_sha256' => '',   // TunnelManager: verified binary hash
+            'limited_ai_daily'     => 10,   // AccessControl: calls/day for limited tier
+            'custom_role_mappings' => [],   // AccessControl: WP role → capability tier overrides
+            'configured_tenants'   => [],   // TenantIsolation: explicitly configured tenants
+            'active_agents'        => [],   // CapabilityGate: running agent snapshot
+            'integrations'         => [],   // CapabilityGate: active integration snapshot
+            'design_tokens'        => [],   // DesignSystemController: persisted token values
+            'last_security_scan'   => [],   // SecurityMonitor: most recent scan results
+            'tools_jobs'           => [],   // Tools API: async job status store
         ];
 
         foreach ($defaults as $k => $v) {
