@@ -16,6 +16,7 @@ use RJV_AGI_Bridge\Agent\AgentRuntime;
 use RJV_AGI_Bridge\Security\SecurityMonitor;
 use RJV_AGI_Bridge\Security\AccessControl;
 use RJV_AGI_Bridge\Security\ComplianceManager;
+use RJV_AGI_Bridge\Security\ThreatDetector;
 use RJV_AGI_Bridge\Integration\IntegrationManager;
 use RJV_AGI_Bridge\Integration\WebhookManager;
 use RJV_AGI_Bridge\Performance\PerformanceOptimizer;
@@ -24,6 +25,7 @@ use RJV_AGI_Bridge\Governance\PolicyEngine;
 use RJV_AGI_Bridge\Governance\ContractManager;
 use RJV_AGI_Bridge\Governance\UpgradeSafety;
 use RJV_AGI_Bridge\Observability\ReliabilityMonitor;
+use RJV_AGI_Bridge\Hosting\TunnelHealthMonitor;
 
 /**
  * Main Plugin Class
@@ -73,6 +75,7 @@ final class Plugin {
             'API/Options', 'API/Themes', 'API/Plugins', 'API/Menus', 'API/Widgets',
              'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
              'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
+             'API/WooCommerce', 'API/Forms', 'API/Cache', 'API/ACF', 'API/EmailMarketing',
              'Admin/Dashboard',
          ];
 
@@ -85,6 +88,7 @@ final class Plugin {
              'Execution/GoalExecutor', 'Execution/ApprovalWorkflow',
              'Execution/ExecutionLedger',
              'Agent/AgentRuntime',
+             'Security/ThreatDetector',
              'Security/SecurityMonitor', 'Security/AccessControl', 'Security/ComplianceManager',
              'Integration/IntegrationManager', 'Integration/WebhookManager',
              'Performance/PerformanceOptimizer',
@@ -193,6 +197,38 @@ final class Plugin {
             $results = $monitor->run_scan();
             $monitor->save_scan($results);
         });
+
+        // Tunnel health monitor (custom 5-minute interval + hook)
+        Hosting\TunnelHealthMonitor::register_hooks();
+
+        // Webhook delivery retry queue (every 5 minutes)
+        if (!wp_next_scheduled('rjv_agi_webhook_retry')) {
+            wp_schedule_event(time(), 'rjv_agi_five_minutes', 'rjv_agi_webhook_retry');
+        }
+        add_action('rjv_agi_webhook_retry', function () {
+            WebhookManager::instance()->process_retry_queue();
+        });
+
+        // Reliability alert dispatch (every 15 minutes)
+        if (!wp_next_scheduled('rjv_agi_alert_check')) {
+            wp_schedule_event(time(), 'rjv_agi_fifteen_minutes', 'rjv_agi_alert_check');
+        }
+        add_action('rjv_agi_alert_check', function () {
+            ReliabilityMonitor::instance()->dispatch_alerts_if_needed();
+        });
+
+        // Register custom cron intervals if not already present
+        add_filter('cron_schedules', function (array $schedules): array {
+            $schedules['rjv_agi_five_minutes'] ??= [
+                'interval' => 300,
+                'display'  => 'Every 5 Minutes (RJV AGI)',
+            ];
+            $schedules['rjv_agi_fifteen_minutes'] ??= [
+                'interval' => 900,
+                'display'  => 'Every 15 Minutes (RJV AGI)',
+            ];
+            return $schedules;
+        });
     }
 
     /**
@@ -221,6 +257,15 @@ final class Plugin {
             new API\Tools(),
             new API\Sites(),
             new API\EnterpriseControl(),
+            new API\WooCommerce(),
+            new API\Forms(),
+            new API\Cache(),
+            new API\ACF(),
+            new API\EmailMarketing(),
+            new API\LocalHosting(),
+            new API\CloudflareManager(),
+            new API\ExternalPlatforms(),
+            new API\AutoProvision(),
         ];
 
         foreach ($core_controllers as $controller) {
@@ -356,6 +401,64 @@ final class Plugin {
             ['methods' => 'POST', 'callback' => [$this, 'api_create_webhook'], 'permission_callback' => [Auth::class, 'tier2']],
         ]);
 
+        // Webhook delivery routes
+        register_rest_route($namespace, '/webhooks/(?P<webhook_id>[a-zA-Z0-9_-]+)/deliveries', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'api_webhook_deliveries'],
+            'permission_callback' => [Auth::class, 'tier1'],
+        ]);
+
+        // Named API key management routes
+        register_rest_route($namespace, '/auth/keys', [
+            ['methods' => 'GET',  'callback' => [$this, 'api_list_named_keys'],   'permission_callback' => [Auth::class, 'tier3']],
+            ['methods' => 'POST', 'callback' => [$this, 'api_issue_named_key'],   'permission_callback' => [Auth::class, 'tier3']],
+        ]);
+        register_rest_route($namespace, '/auth/keys/(?P<id>[a-zA-Z0-9_-]+)', [
+            'methods'             => 'DELETE',
+            'callback'            => [$this, 'api_revoke_named_key'],
+            'permission_callback' => [Auth::class, 'tier3'],
+        ]);
+
+        // Audit chain verification
+        register_rest_route($namespace, '/audit-log/verify-chain', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'api_verify_audit_chain'],
+            'permission_callback' => [Auth::class, 'tier2'],
+        ]);
+
+        // Audit JSONL export
+        register_rest_route($namespace, '/audit-log/export-jsonl', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'api_export_audit_jsonl'],
+            'permission_callback' => [Auth::class, 'tier2'],
+        ]);
+
+        // Threat detector stats + ban management
+        register_rest_route($namespace, '/security/threats', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'api_threat_stats'],
+            'permission_callback' => [Auth::class, 'tier1'],
+        ]);
+        register_rest_route($namespace, '/security/threats/bans/(?P<ip>[^/]+)', [
+            'methods'             => 'DELETE',
+            'callback'            => [$this, 'api_unban_ip'],
+            'permission_callback' => [Auth::class, 'tier3'],
+        ]);
+
+        // Prometheus metrics endpoint (no auth check – protect with IP allowlist)
+        register_rest_route($namespace, '/metrics', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'api_prometheus_metrics'],
+            'permission_callback' => [Auth::class, 'tier1'],
+        ]);
+
+        // SLO burn rate
+        register_rest_route($namespace, '/observability/burn-rate', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'api_burn_rate'],
+            'permission_callback' => [Auth::class, 'tier1'],
+        ]);
+
         // Design system routes
         register_rest_route($namespace, '/design/tokens', [
             ['methods' => 'GET', 'callback' => [$this, 'api_get_design_tokens'], 'permission_callback' => [Auth::class, 'tier1']],
@@ -369,7 +472,85 @@ final class Plugin {
         ]);
     }
 
-    // API Handlers
+    // ── New route handlers ────────────────────────────────────────────────────
+
+    public function api_webhook_deliveries(\WP_REST_Request $r): \WP_REST_Response {
+        $webhook_id = sanitize_text_field((string) $r->get_param('webhook_id'));
+        $deliveries = WebhookManager::instance()->deliveries($webhook_id);
+        return new \WP_REST_Response(['success' => true, 'data' => $deliveries]);
+    }
+
+    public function api_list_named_keys(\WP_REST_Request $r): \WP_REST_Response {
+        return new \WP_REST_Response(['success' => true, 'data' => Auth::list_named_keys()]);
+    }
+
+    public function api_issue_named_key(\WP_REST_Request $r): \WP_REST_Response {
+        $name  = sanitize_text_field((string) ($r->get_param('name') ?? ''));
+        $scope = sanitize_key((string) ($r->get_param('scope') ?? ''));
+        $tier  = max(1, min(3, (int) ($r->get_param('tier') ?? 1)));
+        $ttl   = ($r->get_param('ttl_seconds') !== null) ? (int) $r->get_param('ttl_seconds') : null;
+
+        if ($name === '') {
+            return new \WP_REST_Response(['success' => false, 'error' => 'name is required'], 400);
+        }
+
+        $result = Auth::issue_named_key($name, $scope, $tier, $ttl);
+        return new \WP_REST_Response(['success' => true, 'data' => $result], 201);
+    }
+
+    public function api_revoke_named_key(\WP_REST_Request $r): \WP_REST_Response {
+        $id      = sanitize_text_field((string) $r->get_param('id'));
+        $success = Auth::revoke_named_key($id);
+        if (!$success) {
+            return new \WP_REST_Response(['success' => false, 'error' => 'Key not found'], 404);
+        }
+        return new \WP_REST_Response(['success' => true]);
+    }
+
+    public function api_verify_audit_chain(\WP_REST_Request $r): \WP_REST_Response {
+        return new \WP_REST_Response(['success' => true, 'data' => AuditLog::verify_chain()]);
+    }
+
+    public function api_export_audit_jsonl(\WP_REST_Request $r): \WP_REST_Response {
+        $filters = (array) ($r->get_param('filters') ?? []);
+        $result  = AuditLog::export_jsonl($filters);
+        $status  = $result['success'] ? 200 : 500;
+        return new \WP_REST_Response(['success' => $result['success'], 'data' => $result], $status);
+    }
+
+    public function api_threat_stats(\WP_REST_Request $r): \WP_REST_Response {
+        return new \WP_REST_Response([
+            'success' => true,
+            'data'    => [
+                'stats'       => \RJV_AGI_Bridge\Security\ThreatDetector::stats(),
+                'banned_list' => \RJV_AGI_Bridge\Security\ThreatDetector::banned_list(),
+            ],
+        ]);
+    }
+
+    public function api_unban_ip(\WP_REST_Request $r): \WP_REST_Response {
+        $ip = urldecode((string) $r->get_param('ip'));
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            return new \WP_REST_Response(['success' => false, 'error' => 'Invalid IP address'], 400);
+        }
+        \RJV_AGI_Bridge\Security\ThreatDetector::unban($ip);
+        AuditLog::log('threat_ip_unbanned', 'security', 0, ['ip' => $ip], 3);
+        return new \WP_REST_Response(['success' => true]);
+    }
+
+    public function api_prometheus_metrics(\WP_REST_Request $r): \WP_REST_Response {
+        $text     = ReliabilityMonitor::instance()->metrics_text();
+        $response = new \WP_REST_Response($text, 200);
+        $response->header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+        return $response;
+    }
+
+    public function api_burn_rate(\WP_REST_Request $r): \WP_REST_Response {
+        return new \WP_REST_Response([
+            'success' => true,
+            'data'    => ReliabilityMonitor::instance()->burn_rate(),
+        ]);
+    }
 
     public function api_platform_status(\WP_REST_Request $r): \WP_REST_Response {
         $connector = PlatformConnector::instance();
@@ -608,6 +789,16 @@ final class Plugin {
         $route = $request->get_route();
         if (strpos($route, '/rjv-agi/v1/') !== 0) {
             return $result;
+        }
+
+        // ── ThreatDetector: inspect every inbound API request ─────────────────
+        $threat = ThreatDetector::inspect($request);
+        if (!$threat['allowed']) {
+            return new \WP_Error('threat_blocked', 'Request blocked by security policy', [
+                'status'   => 403,
+                'score'    => $threat['score'],
+                'flags'    => $threat['flags'],
+            ]);
         }
 
         $trace_id = ReliabilityMonitor::instance()->begin_trace($request);
