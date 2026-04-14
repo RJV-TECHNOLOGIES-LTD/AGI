@@ -227,6 +227,9 @@ final class Plugin {
             new API\Cache(),
             new API\ACF(),
             new API\EmailMarketing(),
+            new API\LocalHosting(),
+            new API\CloudflareManager(),
+            new API\ExternalPlatforms(),
         ];
 
         foreach ($core_controllers as $controller) {

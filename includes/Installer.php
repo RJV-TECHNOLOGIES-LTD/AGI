@@ -207,6 +207,53 @@ class Installer {
                 'load_tests_min' => 90,
                 'chaos_tests_min' => 80,
             ],
+
+            // ── Cloudflare ────────────────────────────────────────────────
+            'cloudflare_token'      => '',
+            'cloudflare_email'      => '',
+            'cloudflare_api_key'    => '',
+            'cloudflare_account_id' => '',
+
+            // ── Cloudflare Tunnel (local hosting) ─────────────────────────
+            'tunnel_enabled'        => '0',
+            'tunnel_mode'           => 'quick',
+            'tunnel_token'          => '',
+            'tunnel_hostname'       => '',
+            'tunnel_original_url'   => '',
+
+            // ── Google Services ───────────────────────────────────────────
+            'google_client_id'      => '',
+            'google_client_secret'  => '',
+            'google_redirect_uri'   => '',
+            'google_access_token'   => '',
+            'google_refresh_token'  => '',
+            'ga4_measurement_id'    => '',
+            'ga4_enabled'           => '0',
+            'gtm_container_id'      => '',
+            'gtm_enabled'           => '0',
+            'google_ads_id'         => '',
+            'google_ads_enabled'    => '0',
+            'gsc_verification'      => '',
+
+            // ── Microsoft Services ────────────────────────────────────────
+            'microsoft_client_id'       => '',
+            'microsoft_client_secret'   => '',
+            'microsoft_redirect_uri'    => '',
+            'microsoft_access_token'    => '',
+            'microsoft_refresh_token'   => '',
+            'clarity_project_id'        => '',
+            'clarity_api_key'           => '',
+            'clarity_enabled'           => '0',
+            'bing_uet_tag_id'           => '',
+            'bing_ads_enabled'          => '0',
+            'bing_developer_token'      => '',
+            'bing_customer_id'          => '',
+            'bing_account_id'           => '',
+            'bing_wmt_api_key'          => '',
+            'bing_verification'         => '',
+            'appinsights_key'           => '',
+            'appinsights_connection_string' => '',
+            'appinsights_enabled'       => '0',
         ];
 
         foreach ($defaults as $k => $v) {
