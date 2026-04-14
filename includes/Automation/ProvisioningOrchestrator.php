@@ -256,8 +256,19 @@ final class ProvisioningOrchestrator {
                 return ['success' => false, 'error' => 'Cloudflare token missing'];
             }
             $cf     = new CloudflareAPI($token);
-            $result = $cf->setup_wordpress_site($domain, $self->config['cloudflare_account_id'] ?? '');
-            return $result;
+            // Find or create zone for the domain, then apply WordPress-optimised settings
+            $zones  = $cf->list_zones(['name' => $domain]);
+            $zone_id = $zones['data'][0]['id'] ?? '';
+            if ($zone_id === '') {
+                $acct_id = $self->config['cloudflare_account_id'] ?? '';
+                $create  = $cf->create_zone($domain, $acct_id);
+                $zone_id = $create['data']['id'] ?? '';
+            }
+            if ($zone_id === '') {
+                return ['success' => false, 'error' => 'Could not find or create Cloudflare zone for ' . $domain];
+            }
+            update_option('rjv_agi_cf_zone_id', $zone_id);
+            return $cf->setup_wordpress($zone_id);
         }, null, idempotent: true, critical: false);
 
         $this->add_step('cf_configure_performance', ['cf_setup_zone'], function () use ($self) {
@@ -267,13 +278,13 @@ final class ProvisioningOrchestrator {
             }
             $token = SecretsVault::instance()->get('cloudflare_api_token', false) ?? '';
             $cf    = new CloudflareAPI($token);
-            return $cf->set_speed_settings($zone_id, [
-                'minify'             => ['css' => 'on', 'html' => 'on', 'js' => 'on'],
-                'brotli'             => 'on',
-                'rocket_loader'      => 'on',
-                'browser_cache_ttl'  => 14400,
-                'polish'             => 'lossless',
-            ]);
+            // Apply performance settings via individual methods
+            $cf->set_brotli($zone_id);
+            $cf->set_minification($zone_id);
+            $cf->set_rocket_loader($zone_id, 'on');
+            $cf->set_polish($zone_id, 'lossless');
+            $cf->set_browser_cache_ttl($zone_id, 14400);
+            return ['success' => true, 'zone_id' => $zone_id];
         }, null, idempotent: true, critical: false);
 
         // ── Google services ──────────────────────────────────────────────
@@ -285,7 +296,8 @@ final class ProvisioningOrchestrator {
                 return ['success' => false, 'error' => 'No GA4 Measurement ID', 'skippable' => true];
             }
             $google = new GoogleServices();
-            return $google->inject_ga4_snippet($measurement_id);
+            $google->inject_ga4($measurement_id);
+            return ['success' => true, 'measurement_id' => $measurement_id];
         }, null, idempotent: true, critical: false);
 
         $this->add_step('google_inject_gtm', [], function () use ($self) {
@@ -296,7 +308,8 @@ final class ProvisioningOrchestrator {
                 return ['success' => false, 'error' => 'No GTM Container ID', 'skippable' => true];
             }
             $google = new GoogleServices();
-            return $google->inject_gtm_snippet($container_id);
+            $google->inject_gtm($container_id);
+            return ['success' => true, 'container_id' => $container_id];
         }, null, idempotent: true, critical: false);
 
         $this->add_step('google_search_console', ['apply_wp_url'], function () use ($self) {
@@ -306,7 +319,7 @@ final class ProvisioningOrchestrator {
             }
             $site_url = (string) get_option('siteurl', site_url());
             $google   = new GoogleServices($token);
-            $result   = $google->add_site($site_url);
+            $result   = $google->add_search_console_site($site_url);
             if ($result['success'] ?? false) {
                 $google->submit_sitemap($site_url, trailingslashit($site_url) . 'sitemap_index.xml');
             }
@@ -322,7 +335,8 @@ final class ProvisioningOrchestrator {
                 return ['success' => false, 'error' => 'No Clarity Project ID', 'skippable' => true];
             }
             $ms = new MicrosoftServices();
-            return $ms->inject_clarity_snippet($project_id);
+            $ms->inject_clarity($project_id);
+            return ['success' => true, 'project_id' => $project_id];
         }, null, idempotent: true, critical: false);
 
         $this->add_step('ms_bing_webmaster', ['apply_wp_url'], function () use ($self) {
@@ -332,9 +346,9 @@ final class ProvisioningOrchestrator {
             }
             $site_url = (string) get_option('siteurl', site_url());
             $ms       = new MicrosoftServices($token);
-            $result   = $ms->add_site($site_url);
+            $result   = $ms->add_wmt_site($site_url);
             if ($result['success'] ?? false) {
-                $ms->submit_sitemap($site_url, trailingslashit($site_url) . 'sitemap_index.xml');
+                $ms->submit_wmt_sitemap($site_url, trailingslashit($site_url) . 'sitemap_index.xml');
             }
             return $result;
         }, null, idempotent: true, critical: false);
