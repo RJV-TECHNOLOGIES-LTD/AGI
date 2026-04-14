@@ -3,7 +3,7 @@
  * Plugin Name:       RJV AGI Bridge
  * Plugin URI:        https://rjvtechnologies.com/agi-bridge
  * Description:       Enterprise AGI control interface for WordPress. System-level control surface for secure, governed, and auditable AGI operations.
- * Version:           3.0.0
+ * Version:           3.2.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            RJV Technologies Ltd
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('RJV_AGI_VERSION', '3.0.0');
+define('RJV_AGI_VERSION', '3.2.0');
 define('RJV_AGI_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RJV_AGI_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RJV_AGI_LOG_TABLE', 'rjv_agi_audit_log');

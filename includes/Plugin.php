@@ -11,12 +11,19 @@ use RJV_AGI_Bridge\Design\DesignSystemController;
 use RJV_AGI_Bridge\Events\EventDispatcher;
 use RJV_AGI_Bridge\Execution\GoalExecutor;
 use RJV_AGI_Bridge\Execution\ApprovalWorkflow;
+use RJV_AGI_Bridge\Execution\ExecutionLedger;
 use RJV_AGI_Bridge\Agent\AgentRuntime;
 use RJV_AGI_Bridge\Security\SecurityMonitor;
 use RJV_AGI_Bridge\Security\AccessControl;
+use RJV_AGI_Bridge\Security\ComplianceManager;
 use RJV_AGI_Bridge\Integration\IntegrationManager;
 use RJV_AGI_Bridge\Integration\WebhookManager;
 use RJV_AGI_Bridge\Performance\PerformanceOptimizer;
+use RJV_AGI_Bridge\Governance\ProgramRegistry;
+use RJV_AGI_Bridge\Governance\PolicyEngine;
+use RJV_AGI_Bridge\Governance\ContractManager;
+use RJV_AGI_Bridge\Governance\UpgradeSafety;
+use RJV_AGI_Bridge\Observability\ReliabilityMonitor;
 
 /**
  * Main Plugin Class
@@ -39,12 +46,19 @@ final class Plugin {
     private ?EventDispatcher $events = null;
     private ?GoalExecutor $goals = null;
     private ?ApprovalWorkflow $approvals = null;
+    private ?ExecutionLedger $ledger = null;
     private ?AgentRuntime $agents = null;
     private ?SecurityMonitor $security = null;
     private ?AccessControl $access = null;
+    private ?ComplianceManager $compliance = null;
     private ?IntegrationManager $integrations = null;
     private ?WebhookManager $webhooks = null;
     private ?PerformanceOptimizer $performance = null;
+    private ?ProgramRegistry $program = null;
+    private ?PolicyEngine $policy = null;
+    private ?ContractManager $contract = null;
+    private ?UpgradeSafety $upgrade_safety = null;
+    private ?ReliabilityMonitor $reliability = null;
 
     public static function instance(): self {
         return self::$instance ??= new self();
@@ -57,10 +71,10 @@ final class Plugin {
             'AI/Provider', 'AI/OpenAI', 'AI/Anthropic', 'AI/Router',
             'API/Base', 'API/Posts', 'API/Pages', 'API/Media', 'API/Users',
             'API/Options', 'API/Themes', 'API/Plugins', 'API/Menus', 'API/Widgets',
-            'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
-            'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron',
-            'Admin/Dashboard',
-        ];
+             'API/SEO', 'API/Comments', 'API/Taxonomies', 'API/SiteHealth',
+             'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
+             'Admin/Dashboard',
+         ];
 
         // Load enterprise modules
         $enterprise_files = [
@@ -68,11 +82,14 @@ final class Plugin {
             'Content/VersionManager', 'Content/ContentOperations',
             'Design/DesignSystemController',
             'Events/EventDispatcher',
-            'Execution/GoalExecutor', 'Execution/ApprovalWorkflow',
-            'Agent/AgentRuntime',
-            'Security/SecurityMonitor', 'Security/AccessControl',
-            'Integration/IntegrationManager', 'Integration/WebhookManager',
-            'Performance/PerformanceOptimizer',
+             'Execution/GoalExecutor', 'Execution/ApprovalWorkflow',
+             'Execution/ExecutionLedger',
+             'Agent/AgentRuntime',
+             'Security/SecurityMonitor', 'Security/AccessControl', 'Security/ComplianceManager',
+             'Integration/IntegrationManager', 'Integration/WebhookManager',
+             'Performance/PerformanceOptimizer',
+             'Governance/ProgramRegistry', 'Governance/PolicyEngine', 'Governance/ContractManager', 'Governance/UpgradeSafety',
+             'Observability/ReliabilityMonitor',
         ];
 
         $all_files = array_merge($core_files, $enterprise_files);
@@ -98,6 +115,7 @@ final class Plugin {
         add_action('admin_enqueue_scripts', [$this->dashboard, 'enqueue_assets']);
         add_filter('rest_pre_dispatch', [$this, 'pre_dispatch'], 5, 3);
         add_filter('rest_pre_dispatch', [$this, 'rate_limit'], 10, 3);
+        add_filter('rest_post_dispatch', [$this, 'post_dispatch'], 10, 3);
 
         // Schedule cron jobs
         $this->schedule_cron_jobs();
@@ -120,12 +138,19 @@ final class Plugin {
         $this->events = EventDispatcher::instance();
         $this->goals = GoalExecutor::instance();
         $this->approvals = ApprovalWorkflow::instance();
+        $this->ledger = ExecutionLedger::instance();
         $this->agents = AgentRuntime::instance();
         $this->security = SecurityMonitor::instance();
         $this->access = AccessControl::instance();
+        $this->compliance = ComplianceManager::instance();
         $this->integrations = IntegrationManager::instance();
         $this->webhooks = WebhookManager::instance();
         $this->performance = PerformanceOptimizer::instance();
+        $this->program = ProgramRegistry::instance();
+        $this->policy = PolicyEngine::instance();
+        $this->contract = ContractManager::instance();
+        $this->upgrade_safety = UpgradeSafety::instance();
+        $this->reliability = ReliabilityMonitor::instance();
     }
 
     /**
@@ -193,6 +218,9 @@ final class Plugin {
             new API\Database(),
             new API\FileSystem(),
             new API\Cron(),
+            new API\Tools(),
+            new API\Sites(),
+            new API\EnterpriseControl(),
         ];
 
         foreach ($core_controllers as $controller) {
@@ -582,16 +610,120 @@ final class Plugin {
             return $result;
         }
 
+        $trace_id = ReliabilityMonitor::instance()->begin_trace($request);
+        $request_id = sanitize_text_field((string) $request->get_header('X-RJV-Request-ID'));
+        if ($request_id === '') {
+            $request_id = 'req_' . wp_generate_uuid4();
+        }
+        $approval_id = (int) $request->get_header('X-RJV-Approval-ID');
+        $agent_id = sanitize_text_field((string) $request->get_header('X-RJV-Agent-ID'));
+        if ($agent_id === '') {
+            $agent_id = 'api';
+        }
+
         // Initialize tenant context
         TenantIsolation::instance();
+
+        $hasApprovalOverride = $this->has_valid_policy_approval($request, $route);
+        $policy = $hasApprovalOverride
+            ? ['allowed' => true, 'requires_approval' => false, 'policy' => 'approved_override']
+            : PolicyEngine::instance()->evaluate($request);
+        if (($policy['allowed'] ?? true) !== true) {
+            AuditLog::log('request_policy_lineage', 'request', 0, [
+                'route' => $route,
+                'method' => $request->get_method(),
+                'trace_id' => $trace_id,
+                'request_id' => $request_id,
+                'approval_id' => $approval_id,
+                'agent_id' => $agent_id,
+                'policy_decision' => 'deny',
+                'policy' => (string) ($policy['policy'] ?? ''),
+                'why' => (string) ($policy['reason'] ?? 'Request denied by policy'),
+            ], 2, 'error');
+            return new \WP_Error('policy_denied', $policy['reason'] ?? 'Request denied by policy', [
+                'status' => 403,
+                'trace_id' => $trace_id,
+            ]);
+        }
+
+        $mandatoryApproval = !$hasApprovalOverride
+            ? $this->mandatory_approval_requirement($request, $route)
+            : null;
+        $requiresApproval = (($policy['requires_approval'] ?? false) === true) || is_array($mandatoryApproval);
+        if ($requiresApproval) {
+            $actionType = (($policy['escalated'] ?? false) === true) ? 'policy_escalation_request' : 'policy_guardrail_request';
+            $approvalSource = (($policy['requires_approval'] ?? false) === true) ? 'policy' : 'mandatory_critical';
+            $approvalWhy = ($approvalSource === 'policy')
+                ? (string) ($policy['reason'] ?? 'Approval required by policy')
+                : (string) ($mandatoryApproval['reason'] ?? 'Approval required for critical operation');
+            $approval = ApprovalWorkflow::instance()->submit($actionType, [
+                'route' => $route,
+                'method' => $request->get_method(),
+                'params' => $request->get_json_params(),
+                'trace_id' => $trace_id,
+                'request_id' => $request_id,
+                'rule_id' => (string) ($policy['rule_id'] ?? ''),
+                'rule_type' => (string) ($policy['rule_type'] ?? ''),
+                'policy_reason' => (string) ($policy['reason'] ?? ''),
+                'approval_source' => $approvalSource,
+                'critical_class' => (string) ($mandatoryApproval['class'] ?? ''),
+                'critical_reason' => (string) ($mandatoryApproval['reason'] ?? ''),
+            ], 'api', 'agi');
+            AuditLog::log('request_policy_lineage', 'request', 0, [
+                'route' => $route,
+                'method' => $request->get_method(),
+                'trace_id' => $trace_id,
+                'request_id' => $request_id,
+                'approval_id' => (int) ($approval['approval_id'] ?? 0),
+                'agent_id' => $agent_id,
+                'policy_decision' => (($policy['escalated'] ?? false) === true) ? 'escalate' : 'approve',
+                'policy' => (string) ($policy['policy'] ?? ''),
+                'approval_source' => $approvalSource,
+                'critical_class' => (string) ($mandatoryApproval['class'] ?? ''),
+                'why' => $approvalWhy,
+            ], 2);
+
+            return new \WP_REST_Response([
+                'success' => true,
+                'data' => [
+                    'requires_approval' => true,
+                    'approval_source' => $approvalSource,
+                    'approval' => $approval,
+                    'trace_id' => $trace_id,
+                ],
+            ], 202);
+        }
+        AuditLog::log('request_policy_lineage', 'request', 0, [
+            'route' => $route,
+            'method' => $request->get_method(),
+            'trace_id' => $trace_id,
+            'request_id' => $request_id,
+            'approval_id' => $approval_id,
+            'agent_id' => $agent_id,
+            'policy_decision' => 'allow',
+            'policy' => (string) ($policy['policy'] ?? 'default'),
+            'approval_source' => $hasApprovalOverride ? 'approved_override' : 'none',
+            'why' => (string) ($policy['reason'] ?? 'Allowed by policy'),
+        ], 1);
 
         // Dispatch event for request
         EventDispatcher::instance()->dispatch('api.request', [
             'route' => $route,
             'method' => $request->get_method(),
+            'trace_id' => $trace_id,
         ], 3);
 
         return $result;
+    }
+
+    public function post_dispatch($response, $server, $request) {
+        $route = $request->get_route();
+        if (strpos($route, '/rjv-agi/v1/') !== 0) {
+            return $response;
+        }
+
+        $response = ReliabilityMonitor::instance()->attach_headers($response);
+        return ContractManager::instance()->attach_headers($response, $route, (string) $request->get_method());
     }
 
     /**
@@ -628,6 +760,70 @@ final class Plugin {
         if ($connector->is_configured()) {
             $connector->heartbeat();
         }
+    }
+
+    private function has_valid_policy_approval(\WP_REST_Request $request, string $route): bool {
+        $approval_id = (int) $request->get_header('X-RJV-Approval-ID');
+        if ($approval_id <= 0) {
+            return false;
+        }
+
+        $item = ApprovalWorkflow::instance()->get_item($approval_id);
+        if (!$item) {
+            return false;
+        }
+
+        if (!in_array((string) ($item['action_type'] ?? ''), ['policy_guardrail_request', 'policy_escalation_request'], true)) {
+            return false;
+        }
+
+        $status = (string) ($item['status'] ?? '');
+        if (!in_array($status, ['approved', 'executed'], true)) {
+            return false;
+        }
+
+        $actionData = is_array($item['action_data'] ?? null)
+            ? $item['action_data']
+            : (json_decode((string) ($item['action_data'] ?? ''), true) ?: []);
+
+        return (string) ($actionData['route'] ?? '') === $route
+            && strtoupper((string) ($actionData['method'] ?? '')) === strtoupper($request->get_method());
+    }
+
+    private function mandatory_approval_requirement(\WP_REST_Request $request, string $route): ?array {
+        $method = strtoupper((string) $request->get_method());
+        if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+            return null;
+        }
+        if (str_starts_with($route, '/rjv-agi/v1/approvals') || str_starts_with($route, '/rjv-agi/v1/health')) {
+            return null;
+        }
+
+        $params = (array) $request->get_json_params();
+        $force = filter_var($params['force'] ?? false, FILTER_VALIDATE_BOOLEAN) === true;
+
+        if (preg_match('#^/rjv-agi/v1/users/\d+/role-transition$#', $route) === 1) {
+            return [
+                'class' => 'user_role_change',
+                'reason' => 'User role transitions require explicit approval',
+            ];
+        }
+
+        if (str_starts_with($route, '/rjv-agi/v1/plugins') || str_starts_with($route, '/rjv-agi/v1/themes')) {
+            return [
+                'class' => 'plugin_theme_operation',
+                'reason' => 'Plugin/theme mutations require explicit approval',
+            ];
+        }
+
+        if ($method === 'DELETE' || $force || preg_match('#/delete(?:/|$)#', $route) === 1) {
+            return [
+                'class' => 'destructive_action',
+                'reason' => 'Destructive or force operations require explicit approval',
+            ];
+        }
+
+        return null;
     }
 
     // Accessors for modules
@@ -690,5 +886,25 @@ final class Plugin {
 
     public function performance(): PerformanceOptimizer {
         return $this->performance ?? PerformanceOptimizer::instance();
+    }
+
+    public function program(): ProgramRegistry {
+        return $this->program ?? ProgramRegistry::instance();
+    }
+
+    public function policy(): PolicyEngine {
+        return $this->policy ?? PolicyEngine::instance();
+    }
+
+    public function contract(): ContractManager {
+        return $this->contract ?? ContractManager::instance();
+    }
+
+    public function upgrade_safety(): UpgradeSafety {
+        return $this->upgrade_safety ?? UpgradeSafety::instance();
+    }
+
+    public function reliability(): ReliabilityMonitor {
+        return $this->reliability ?? ReliabilityMonitor::instance();
     }
 }

@@ -4,8 +4,10 @@ namespace RJV_AGI_Bridge;
 
 use RJV_AGI_Bridge\Content\VersionManager;
 use RJV_AGI_Bridge\Execution\ApprovalWorkflow;
+use RJV_AGI_Bridge\Execution\ExecutionLedger;
 use RJV_AGI_Bridge\Agent\AgentRuntime;
 use RJV_AGI_Bridge\Security\SecurityMonitor;
+use RJV_AGI_Bridge\Governance\UpgradeSafety;
 use RJV_AGI_Bridge\Integration\IntegrationManager;
 use RJV_AGI_Bridge\Integration\WebhookManager;
 
@@ -31,8 +33,18 @@ class Installer {
         if (version_compare($current, RJV_AGI_VERSION, '>=')) {
             return;
         }
+        $upgrade = UpgradeSafety::instance();
+        $run = $upgrade->begin_upgrade($current, RJV_AGI_VERSION);
+        if (($run['compatibility']['compatible'] ?? false) !== true) {
+            $upgrade->complete_upgrade((string) ($run['id'] ?? ''), false, ['error' => 'Compatibility checks failed']);
+            return;
+        }
         self::create_tables();
+        $upgrade->record_migration((string) $run['id'], 'create_tables', 'completed');
+        self::set_defaults();
+        $upgrade->record_migration((string) $run['id'], 'set_defaults', 'completed');
         update_option('rjv_agi_version', RJV_AGI_VERSION);
+        $upgrade->complete_upgrade((string) $run['id'], true, ['version' => RJV_AGI_VERSION]);
     }
 
     private static function create_tables(): void {
@@ -79,6 +91,9 @@ class Installer {
 
         // Agent runtime table
         AgentRuntime::create_table();
+
+        // Deterministic execution ledger table
+        ExecutionLedger::create_table();
 
         // Security monitoring table
         SecurityMonitor::create_table();
@@ -131,6 +146,67 @@ class Installer {
 
             // Security Scanning
             'security_scan_enabled' => '1',
+
+            // Enterprise Program Controls
+            'program_scope_taxonomy' => [
+                'Core Ops', 'AI Orchestration', 'Security', 'Compliance',
+                'Enterprise Integrations', 'Governance', 'Observability', 'Admin UX', 'Platform Controls',
+            ],
+            'program_targets' => [
+                'availability_slo' => 99.9,
+                'api_coverage_pct' => 95.0,
+                'change_failure_rate_pct' => 5.0,
+                'p95_latency_ms' => 800,
+                'rollback_readiness_pct' => 100.0,
+                'security_patch_sla_hours' => 24,
+            ],
+            'program_milestones' => [],
+            'policy_rules' => [
+                'enforcement_enabled' => true,
+                'rule_resolution' => 'priority_then_restrictiveness',
+                'deny_routes' => [],
+                'approval_routes' => ['/rjv-agi/v1/plugins', '/rjv-agi/v1/themes', '/rjv-agi/v1/filesystem', '/rjv-agi/v1/database'],
+                'approval_methods' => ['DELETE'],
+                'bypass_routes' => ['/rjv-agi/v1/approvals', '/rjv-agi/v1/health'],
+                'rules' => [
+                    ['id' => 'deny_critical_fs', 'type' => 'deny', 'priority' => 100, 'route_pattern' => '/rjv-agi/v1/filesystem', 'methods' => ['DELETE'], 'reason' => 'Critical filesystem delete denied by default'],
+                    ['id' => 'approve_plugins', 'type' => 'approve', 'priority' => 60, 'route_pattern' => '/rjv-agi/v1/plugins*', 'methods' => ['POST', 'PUT', 'PATCH', 'DELETE'], 'reason' => 'Plugin state changes require approval'],
+                    ['id' => 'escalate_database', 'type' => 'escalate', 'priority' => 70, 'route_pattern' => '/rjv-agi/v1/database*', 'methods' => ['POST', 'PUT', 'DELETE'], 'reason' => 'Database mutations require escalation'],
+                ],
+            ],
+            'capability_overrides' => [],
+            'capability_plan_overrides' => [],
+            'api_contract' => [
+                'contract_id' => 'rjv-agi-v1',
+                'api_version' => 'v1',
+                'compatibility_policy' => 'Backward-compatible additive changes only within major version',
+                'deprecation_policy' => ['notice_days' => 90, 'sunset_header' => true, 'replacement_required' => true],
+            ],
+            'api_deprecations' => [],
+            'upgrade_history' => [],
+            'upgrade_last' => [],
+            'upgrade_lock' => ['active' => false, 'until' => ''],
+            'threat_model_controls' => [
+                'prompt_injection' => ['enabled' => true, 'status' => 'monitoring'],
+                'privilege_escalation' => ['enabled' => true, 'status' => 'enforced'],
+                'data_exfiltration' => ['enabled' => true, 'status' => 'enforced'],
+                'supply_chain' => ['enabled' => true, 'status' => 'monitoring'],
+                'audit_tampering' => ['enabled' => true, 'status' => 'enforced'],
+            ],
+            'compliance_controls' => [
+                'retention_days' => 90,
+                'legal_hold' => ['enabled' => false, 'reason' => '', 'set_at' => ''],
+                'data_residency' => ['region' => 'global', 'strict' => false],
+                'exports_enabled' => true,
+            ],
+            'secret_rotation_log' => [],
+            'release_gate_thresholds' => [
+                'contract_tests_min' => 95,
+                'integration_tests_min' => 90,
+                'e2e_tests_min' => 85,
+                'load_tests_min' => 90,
+                'chaos_tests_min' => 80,
+            ],
         ];
 
         foreach ($defaults as $k => $v) {
