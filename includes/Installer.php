@@ -320,7 +320,7 @@ class Installer {
             'config_baseline' => [],
 
             // ── Runtime-state seeds (prevent false on first read) ────────────────
-            'chain_key_fallback'   => '',   // AuditLog HMAC root; auto-generated on first use
+            'chain_key_fallback'   => '',   // AuditLog HMAC root; left empty so AuditLog auto-generates and persists a random key on first write
             'tunnel_binary_sha256' => '',   // TunnelManager: verified binary hash
             'limited_ai_daily'     => 10,   // AccessControl: calls/day for limited tier
             'custom_role_mappings' => [],   // AccessControl: WP role → capability tier overrides

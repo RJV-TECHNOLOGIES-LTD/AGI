@@ -17,7 +17,7 @@ final class Settings {
         'allowed_ips'          => ['type' => 'string',  'default' => ''],
         'rate_limit'           => ['type' => 'int',     'default' => 600,  'min' => 0,    'max' => 10000],
         'replay_protection'    => ['type' => 'bool',    'default' => false],  // reject replayed requests via nonce window
-        'named_keys'           => ['type' => 'array',   'default' => []],     // per-named-key credentials issued via /auth/keys
+        'named_keys'           => ['type' => 'array',   'default' => []],     // issued API credential records (name, tier, scope, expiry); managed via /auth/keys
 
         // AI providers
         'default_model'        => ['type' => 'enum',    'default' => 'anthropic', 'values' => ['openai', 'anthropic', 'google']],
@@ -161,7 +161,7 @@ final class Settings {
         'tunnel_binary_sha256' => ['type' => 'string', 'default' => ''],
 
         // AccessControl: daily AI call limit for the "limited" capability tier
-        'limited_ai_daily'    => ['type' => 'int', 'default' => 10, 'min' => 0, 'max' => 10000],
+        'limited_ai_daily'    => ['type' => 'int', 'default' => 10, 'min' => 0, 'max' => 10000],   // max AI calls per day for the "limited" capability tier
 
         // AccessControl: custom WordPress role → capability tier mappings
         'custom_role_mappings' => ['type' => 'array', 'default' => []],

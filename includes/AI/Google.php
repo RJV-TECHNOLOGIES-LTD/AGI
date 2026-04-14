@@ -164,7 +164,7 @@ final class Google implements Provider {
         }
         $permanent_phrases = [
             'api_key', 'api key', 'authentication', 'permission', 'not found',
-            'invalid_argument', 'resource_exhausted billing',
+            'invalid_argument', 'resource_exhausted', 'billing',
         ];
         $lower = strtolower($error);
         foreach ($permanent_phrases as $phrase) {
