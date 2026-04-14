@@ -295,7 +295,10 @@ class EmailMarketing extends Base {
 
         $where = "status IN ('C','P')";
         if ($list_id > 0) {
-            $col    = "list{$list_id}";
+            $col = $this->newsletter_list_column($list_id);
+            if ($col === null) {
+                return ['subscribers' => [], 'total' => 0, 'page' => $page, 'per_page' => $pp];
+            }
             $where .= $wpdb->prepare(" AND {$col} = %d", 1);
         }
 
@@ -362,7 +365,10 @@ class EmailMarketing extends Base {
         ];
 
         if (!empty($data['list_id'])) {
-            $row_data['list' . (int) $data['list_id']] = 1;
+            $col = $this->newsletter_list_column((int) $data['list_id']);
+            if ($col !== null) {
+                $row_data[$col] = 1;
+            }
         }
 
         if ($existing) {
@@ -409,6 +415,19 @@ class EmailMarketing extends Base {
     // -------------------------------------------------------------------------
     // Mailchimp for WP helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Return a validated Newsletter list column name (e.g. "list1", "list2").
+     * Returns null when the supplied ID is out of the Newsletter plugin's
+     * supported range (1-10), preventing arbitrary column injection.
+     */
+    private function newsletter_list_column(int $list_id): ?string {
+        if ($list_id < 1 || $list_id > 10) {
+            return null;
+        }
+
+        return "list{$list_id}";
+    }
 
     private function mc4wp_add_subscriber(string $email, array $data): array {
         if (!function_exists('mc4wp_get_api_v3') && !class_exists('MC4WP_API_v3')) {

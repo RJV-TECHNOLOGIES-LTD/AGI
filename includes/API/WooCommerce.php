@@ -216,10 +216,12 @@ class WooCommerce extends Base {
         if (!empty($cats))     $context .= "\nCategories: " . implode(', ', $cats);
         if (!empty($d['notes'])) $context .= "\nAdditional notes: " . sanitize_textarea_field((string) $d['notes']);
 
+        $type = (isset($d['type']) && $d['type'] === 'short') ? 'short' : 'full';
+
         $ai  = new Router();
         $res = $ai->complete(
             'You are an expert e-commerce copywriter. Write compelling, SEO-friendly product descriptions in British English.',
-            "Write a " . ($d['type'] === 'short' ? '1-2 sentence short description' : 'full product description (150–300 words)') . " for:\n{$context}",
+            "Write a " . ($type === 'short' ? '1-2 sentence short description' : 'full product description (150–300 words)') . " for:\n{$context}",
             ['provider' => $d['provider'] ?? '', 'temperature' => 0.7, 'max_tokens' => 600]
         );
 
@@ -228,12 +230,12 @@ class WooCommerce extends Base {
         }
 
         if (!empty($d['auto_apply'])) {
-            $field = ($d['type'] === 'short') ? 'post_excerpt' : 'post_content';
+            $field = ($type === 'short') ? 'post_excerpt' : 'post_content';
             wp_update_post(['ID' => $id, $field => wp_kses_post($res['content'])]);
             $res['applied'] = true;
         }
 
-        $this->log('woo_gen_description', 'product', $id, ['type' => $d['type'] ?? 'full', 'applied' => !empty($res['applied'])], 2);
+        $this->log('woo_gen_description', 'product', $id, ['type' => $type, 'applied' => !empty($res['applied'])], 2);
 
         return $this->success($res);
     }

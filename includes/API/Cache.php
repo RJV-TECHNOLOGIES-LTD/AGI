@@ -159,7 +159,9 @@ class Cache extends Base {
             $results['w3_total_cache'] = 'purged';
         }
 
-        wp_cache_delete(md5($url));
+        // Best-effort flush of any object-cache entry keyed by URL hash.
+        // This is a heuristic; the actual cache key varies by plugin.
+        wp_cache_flush_runtime();
         $results['wp_object_cache'] = 'flushed';
 
         $this->log('cache_purge_url', 'cache', 0, array_merge(['url' => $url], $results), 2);
