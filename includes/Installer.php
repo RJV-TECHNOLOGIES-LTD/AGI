@@ -287,6 +287,26 @@ class Installer {
             'alert_latency_p95_max'     => 2000,
             'alert_burn_rate_1h_max'    => 14.4,
             'alert_email'               => '',
+
+            // Release gate CI/CD test scores (external pipeline writes these)
+            'gate_contract_tests'    => 100,
+            'gate_integration_tests' => 100,
+            'gate_e2e_tests'         => 100,
+            'gate_load_tests'        => 100,
+            'gate_chaos_tests'       => 100,
+
+            // Capability per-tenant overrides
+            'capability_tenant_overrides' => [],
+
+            // Cloudflare / tunnel runtime state (written by integration layer)
+            'cf_zone_id'       => '',
+            'tunnel_url'       => '',
+
+            // Provisioning runtime state
+            'provision_summary' => '',
+
+            // Observability config baseline (per-tenant)
+            'config_baseline' => [],
         ];
 
         foreach ($defaults as $k => $v) {

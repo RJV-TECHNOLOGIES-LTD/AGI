@@ -126,6 +126,7 @@ final class Settings {
         'policy_rules'             => ['type' => 'array', 'default' => []],
         'capability_overrides'     => ['type' => 'array', 'default' => []],
         'capability_plan_overrides' => ['type' => 'array', 'default' => []],
+        'capability_tenant_overrides' => ['type' => 'array', 'default' => []],
         'api_contract'             => ['type' => 'array', 'default' => []],
         'api_deprecations'         => ['type' => 'array', 'default' => []],
         'upgrade_history'          => ['type' => 'array', 'default' => []],
@@ -135,6 +136,21 @@ final class Settings {
         'compliance_controls'      => ['type' => 'array', 'default' => []],
         'secret_rotation_log'      => ['type' => 'array', 'default' => []],
         'release_gate_thresholds'  => ['type' => 'array', 'default' => []],
+        'config_baseline'          => ['type' => 'array', 'default' => []],
+
+        // Observability: per-gate CI/CD test scores (written by external pipelines, read by release-gates check)
+        'gate_contract_tests'    => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_integration_tests' => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_e2e_tests'         => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_load_tests'        => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+        'gate_chaos_tests'       => ['type' => 'int', 'default' => 100, 'min' => 0, 'max' => 100],
+
+        // Cloudflare / tunnel runtime state (written by integration layer)
+        'cf_zone_id'       => ['type' => 'string', 'default' => ''],
+        'tunnel_url'       => ['type' => 'string', 'default' => ''],
+
+        // Provisioning runtime state
+        'provision_summary' => ['type' => 'string', 'default' => ''],
     ];
 
     // -------------------------------------------------------------------------
