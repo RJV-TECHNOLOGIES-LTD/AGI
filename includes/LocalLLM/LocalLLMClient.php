@@ -124,7 +124,7 @@ final class LocalLLMClient {
 
         // ── Step 1: Compile prompt ────────────────────────────────────────────
         $prompt = InstructionCompiler::compile($instructions, $scope, $constraints);
-        $this->update_task($task_id, ['compiled_prompt' => wp_json_encode($prompt)]);
+        $this->update_task($task_id, ['compiled_prompt' => $this->safe_json($prompt)]);
 
         // ── Step 2: Call Ollama ───────────────────────────────────────────────
         $llm_result = $this->call_ollama($prompt['system'], $prompt['user']);
@@ -164,7 +164,7 @@ final class LocalLLMClient {
             return ['success' => false, 'task_id' => $task_id, 'error' => 'Invalid LLM response format'];
         }
 
-        $this->update_task($task_id, ['proposed_action' => wp_json_encode($parsed)]);
+        $this->update_task($task_id, ['proposed_action' => $this->safe_json($parsed)]);
 
         // ── Step 4: CapabilityGate validation ─────────────────────────────────
         $gate = CapabilityGate::instance();
@@ -188,7 +188,7 @@ final class LocalLLMClient {
             $noop_result = ['noop' => true, 'rationale' => $parsed['rationale']];
             $this->update_task($task_id, [
                 'action_executed'   => 0,
-                'result'            => wp_json_encode($noop_result),
+                'result'            => $this->safe_json($noop_result),
                 'status'            => 'completed',
                 'execution_time_ms' => $elapsed,
                 'completed_at'      => current_time('mysql', true),
@@ -219,7 +219,7 @@ final class LocalLLMClient {
 
         $this->update_task($task_id, [
             'action_executed'   => 1,
-            'result'            => wp_json_encode($exec_result),
+            'result'            => $this->safe_json($exec_result),
             'status'            => $new_status,
             'execution_time_ms' => $elapsed,
             'completed_at'      => current_time('mysql', true),
@@ -541,12 +541,22 @@ final class LocalLLMClient {
     // Private: DB helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * JSON-encode a value for database storage.
+     * Returns the string 'null' if wp_json_encode fails (e.g. invalid UTF-8),
+     * so callers never write a PHP boolean false into a LONGTEXT column.
+     */
+    private function safe_json(mixed $value): string {
+        $encoded = wp_json_encode($value);
+        return $encoded !== false ? $encoded : 'null';
+    }
+
     private function insert_task(string $task_id, string $agent_id, array $instructions): void {
         global $wpdb;
         $wpdb->insert($this->table_name, [
             'task_id'      => $task_id,
             'agent_id'     => $agent_id,
-            'instructions' => wp_json_encode($instructions),
+            'instructions' => $this->safe_json($instructions),
             'status'       => 'pending',
             'created_at'   => current_time('mysql', true),
         ]);
