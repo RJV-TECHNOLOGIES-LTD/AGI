@@ -311,6 +311,7 @@ final class CapabilityGate {
             'agent_execution' => [
                 'deploy_agent', 'stop_agent',
                 'agent_task', 'agent_workflow',
+                'local_llm_execute', 'local_llm_dispatch',
             ],
             'advanced_agents' => [
                 'create_agent', 'multi_agent',

@@ -83,6 +83,9 @@ final class Plugin {
              'API/ContentGen', 'API/Database', 'API/FileSystem', 'API/Cron', 'API/Tools', 'API/Sites', 'API/EnterpriseControl',
              'API/WooCommerce', 'API/Forms', 'API/Cache', 'API/ACF', 'API/EmailMarketing',
              'API/Schema',
+             // Local LLM (Ollama bridge)
+             'LocalLLM/InstructionCompiler', 'LocalLLM/LocalLLMClient',
+             'API/LocalLLM',
              'Admin/Dashboard',
          ];
 
@@ -306,6 +309,8 @@ final class Plugin {
             new API\Schema(),
             // Data collection (mandatory — all versions)
             new API\DataCollection(),
+            // Local LLM (Ollama bridge)
+            new API\LocalLLM(),
         ];
 
         foreach ($core_controllers as $controller) {

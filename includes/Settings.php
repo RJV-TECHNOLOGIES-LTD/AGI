@@ -152,6 +152,14 @@ final class Settings {
         // Provisioning runtime state
         'provision_summary' => ['type' => 'string', 'default' => ''],
 
+        // Local LLM (Ollama)
+        'local_llm_enabled'     => ['type' => 'bool',   'default' => false],
+        'local_llm_endpoint'    => ['type' => 'string', 'default' => 'http://127.0.0.1:11434'],
+        'local_llm_model'       => ['type' => 'string', 'default' => 'phi3:mini'],
+        'local_llm_timeout'     => ['type' => 'int',    'default' => 60,   'min' => 5,   'max' => 300],
+        'local_llm_max_tokens'  => ['type' => 'int',    'default' => 512,  'min' => 64,  'max' => 4096],
+        'local_llm_temperature' => ['type' => 'float',  'default' => 0.0,  'min' => 0.0, 'max' => 1.0],
+
         // ── Runtime state (written internally; listed here for type-safety and discoverability) ──
 
         // AuditLog HMAC chain: fallback key when AUTH_KEY is absent (auto-generated)

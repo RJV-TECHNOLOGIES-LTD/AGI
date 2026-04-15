@@ -64,6 +64,7 @@ final class Auth {
         '/rjv-agi/v1/health'          => ['monitor', 'admin'],
         '/rjv-agi/v1/audit-log'       => ['monitor', 'admin'],
         '/rjv-agi/v1/sites'           => ['admin'],
+        '/rjv-agi/v1/local-llm'       => ['ai', 'admin'],
     ];
 
     // -------------------------------------------------------------------------

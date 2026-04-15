@@ -399,7 +399,7 @@ final class AgentRuntime {
         }
 
         // Must have a type
-        $valid_types = ['task', 'content', 'seo', 'media', 'analytics', 'security'];
+        $valid_types = ['task', 'content', 'seo', 'media', 'analytics', 'security', 'local_llm'];
         if (empty($config['type']) || !in_array($config['type'], $valid_types, true)) {
             $errors[] = 'Invalid agent type';
         }
@@ -456,6 +456,7 @@ final class AgentRuntime {
             'read_seo', 'update_seo',
             'read_options',
             'ai_complete', 'ai_rewrite',
+            'local_llm_dispatch',
         ];
 
         return array_values(array_intersect($tools, $allowed));

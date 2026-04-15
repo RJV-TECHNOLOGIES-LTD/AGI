@@ -16,6 +16,7 @@ use RJV_AGI_Bridge\DataCollection\ProfileStore;
 use RJV_AGI_Bridge\DataCollection\PageViewStore;
 use RJV_AGI_Bridge\DataCollection\ConsentStore;
 use RJV_AGI_Bridge\DataCollection\IngestQueue;
+use RJV_AGI_Bridge\LocalLLM\LocalLLMClient;
 
 class Installer {
     public static function activate(): void {
@@ -131,6 +132,9 @@ class Installer {
         PageViewStore::create_table();
         ConsentStore::create_table();
         IngestQueue::create_table();
+
+        // Local LLM task history table
+        LocalLLMClient::create_table();
     }
 
     private static function set_defaults(): void {
