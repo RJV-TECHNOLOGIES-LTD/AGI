@@ -111,10 +111,12 @@ SYSTEM;
      *         Returns null when the response cannot be parsed or contains a forbidden action.
      */
     public static function parse_response(string $raw_response, array $scope = []): ?array {
-        // Strip accidental markdown code fences
-        $cleaned = preg_replace('/^```(?:json)?\s*/m', '', $raw_response) ?? $raw_response;
-        $cleaned = preg_replace('/\s*```$/m', '', $cleaned) ?? $cleaned;
-        $cleaned = trim($cleaned);
+        // Strip accidental markdown code fences.
+        // preg_replace returns null only on regex error; in that case fall back
+        // to the original string so we still attempt JSON decoding.
+        $step1   = preg_replace('/^```(?:json)?\s*/m', '', $raw_response);
+        $step2   = preg_replace('/\s*```$/m', '', $step1 ?? $raw_response);
+        $cleaned = trim($step2 ?? ($step1 ?? $raw_response));
 
         $decoded = json_decode($cleaned, true);
         if (!is_array($decoded)) {
@@ -137,7 +139,9 @@ SYSTEM;
             return null;
         }
 
-        // Sanitise all param values
+        // Sanitise all param values. Non-string scalars (int, float, bool) are
+        // cast to their native type; arrays and objects are rejected entirely
+        // since no valid action handler accepts nested structures.
         $raw_params = is_array($decoded['params'] ?? null) ? $decoded['params'] : [];
         $params     = [];
         foreach ($raw_params as $key => $value) {
@@ -145,9 +149,16 @@ SYSTEM;
             if ($key === '') {
                 continue;
             }
-            $params[$key] = is_string($value)
-                ? sanitize_text_field($value)
-                : $value;
+            if (is_string($value)) {
+                $params[$key] = sanitize_text_field($value);
+            } elseif (is_int($value)) {
+                $params[$key] = $value;
+            } elseif (is_float($value)) {
+                $params[$key] = $value;
+            } elseif (is_bool($value)) {
+                $params[$key] = $value;
+            }
+            // Arrays and objects are silently dropped — no action handler accepts them.
         }
 
         return [

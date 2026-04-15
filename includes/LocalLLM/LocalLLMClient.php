@@ -360,6 +360,10 @@ final class LocalLLMClient {
             ],
         ]);
 
+        if ($payload === false) {
+            return ['success' => false, 'error' => 'Failed to JSON-encode the request payload (invalid UTF-8 or encoding error)'];
+        }
+
         $response = wp_remote_post($endpoint . '/api/chat', [
             'timeout'   => $timeout,
             'sslverify' => $this->should_verify_ssl($endpoint),
@@ -568,25 +572,30 @@ final class LocalLLMClient {
     /**
      * Determine whether SSL verification should be enabled for an endpoint URL.
      *
-     * SSL verification is skipped only when the host resolves to a loopback
-     * address (127.x.x.x or ::1) or the literal hostname 'localhost'.
-     * For any other host, verification is enabled so that remote HTTPS
-     * endpoints are properly validated.
+     * SSL verification is skipped only for genuine loopback addresses:
+     *   - The literal hostname 'localhost'
+     *   - IPv4 loopback range 127.0.0.0/8 (validated as an IP before range check)
+     *   - IPv6 loopback '::1'
+     *
+     * Any other host — including remote addresses and hostnames that merely
+     * start with '127.' — will have SSL verification enabled.
      */
     private function should_verify_ssl(string $endpoint): bool {
-        $host = (string) parse_url($endpoint, PHP_URL_HOST);
+        $host = strtolower((string) parse_url($endpoint, PHP_URL_HOST));
         if ($host === '') {
             return true;
         }
 
-        $loopback_hosts = ['localhost', '127.0.0.1', '::1'];
-        if (in_array(strtolower($host), $loopback_hosts, true)) {
+        if ($host === 'localhost' || $host === '::1') {
             return false;
         }
 
-        // Also skip for 127.x.x.x range
-        if (str_starts_with($host, '127.')) {
-            return false;
+        // Only skip verification for a valid IPv4 address in the 127.0.0.0/8 range.
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            $ip_long = ip2long($host);
+            if ($ip_long !== false && ($ip_long & 0xFF000000) === 0x7F000000) {
+                return false;
+            }
         }
 
         return true;
