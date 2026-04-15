@@ -26,6 +26,9 @@ final class LocalLLMClient {
     private static ?self $instance = null;
     private string $table_name;
 
+    /** Default model name used when the setting is empty. */
+    private const DEFAULT_MODEL = 'phi3:mini';
+
     public static function instance(): self {
         return self::$instance ??= new self();
     }
@@ -139,7 +142,7 @@ final class LocalLLMClient {
 
         $raw_response = $llm_result['content'];
         $tokens_used  = $llm_result['tokens'] ?? null;
-        $model_used   = $llm_result['model'] ?? Settings::get_string('local_llm_model', 'phi3:mini');
+        $model_used   = $llm_result['model'] ?? Settings::get_string('local_llm_model', self::DEFAULT_MODEL);
 
         $this->update_task($task_id, [
             'model_response' => $raw_response,
@@ -248,7 +251,7 @@ final class LocalLLMClient {
 
         $response   = wp_remote_get($endpoint . '/api/tags', [
             'timeout'   => 5,
-            'sslverify' => false,
+            'sslverify' => $this->should_verify_ssl($endpoint),
         ]);
 
         $latency_ms = (int) ((microtime(true) - $start) * 1000);
@@ -341,7 +344,7 @@ final class LocalLLMClient {
      */
     private function call_ollama(string $system_prompt, string $user_content): array {
         $endpoint = rtrim(Settings::get_string('local_llm_endpoint', 'http://127.0.0.1:11434'), '/');
-        $model    = Settings::get_string('local_llm_model', 'phi3:mini');
+        $model    = Settings::get_string('local_llm_model', self::DEFAULT_MODEL);
         $timeout  = Settings::get_int('local_llm_timeout', 60);
 
         $payload = wp_json_encode([
@@ -359,7 +362,7 @@ final class LocalLLMClient {
 
         $response = wp_remote_post($endpoint . '/api/chat', [
             'timeout'   => $timeout,
-            'sslverify' => false,
+            'sslverify' => $this->should_verify_ssl($endpoint),
             'headers'   => ['Content-Type' => 'application/json'],
             'body'      => $payload,
         ]);
@@ -560,6 +563,33 @@ final class LocalLLMClient {
             'execution_time_ms' => $elapsed_ms,
             'completed_at'      => current_time('mysql', true),
         ], $extra));
+    }
+
+    /**
+     * Determine whether SSL verification should be enabled for an endpoint URL.
+     *
+     * SSL verification is skipped only when the host resolves to a loopback
+     * address (127.x.x.x or ::1) or the literal hostname 'localhost'.
+     * For any other host, verification is enabled so that remote HTTPS
+     * endpoints are properly validated.
+     */
+    private function should_verify_ssl(string $endpoint): bool {
+        $host = (string) parse_url($endpoint, PHP_URL_HOST);
+        if ($host === '') {
+            return true;
+        }
+
+        $loopback_hosts = ['localhost', '127.0.0.1', '::1'];
+        if (in_array(strtolower($host), $loopback_hosts, true)) {
+            return false;
+        }
+
+        // Also skip for 127.x.x.x range
+        if (str_starts_with($host, '127.')) {
+            return false;
+        }
+
+        return true;
     }
 
     private function hydrate_task(array $row): array {

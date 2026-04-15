@@ -16,7 +16,7 @@ final class InstructionCompiler {
      * Default allowed action types when the AGI does not specify a scope.
      * Restricted to low-risk, read-heavy operations.
      */
-    private const DEFAULT_ALLOWED_ACTIONS = [
+    private const DEFAULT_ALLOWED_ACTION_TYPES = [
         'read_post', 'update_post',
         'read_seo', 'update_seo',
         'ai_complete',
@@ -42,7 +42,7 @@ final class InstructionCompiler {
      * @return array{system: string, user: string}
      */
     public static function compile(array $instructions, array $scope = [], array $constraints = []): array {
-        $allowed_types = (array) ($scope['allowed_action_types'] ?? self::DEFAULT_ALLOWED_ACTIONS);
+        $allowed_types = (array) ($scope['allowed_action_types'] ?? self::DEFAULT_ALLOWED_ACTION_TYPES);
 
         // Strip any always-forbidden items even if the AGI mistakenly listed them
         $allowed_types = array_values(array_diff($allowed_types, self::ALWAYS_FORBIDDEN));
@@ -127,7 +127,7 @@ SYSTEM;
         }
 
         // Re-validate against scope (defence-in-depth)
-        $allowed_types = (array) ($scope['allowed_action_types'] ?? self::DEFAULT_ALLOWED_ACTIONS);
+        $allowed_types = (array) ($scope['allowed_action_types'] ?? self::DEFAULT_ALLOWED_ACTION_TYPES);
         $allowed_types = array_values(array_diff($allowed_types, self::ALWAYS_FORBIDDEN));
         if (!in_array('noop', $allowed_types, true)) {
             $allowed_types[] = 'noop';
