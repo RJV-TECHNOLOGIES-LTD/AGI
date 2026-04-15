@@ -10,12 +10,25 @@ use RJV_AGI_Bridge\Security\SecurityMonitor;
 use RJV_AGI_Bridge\Governance\UpgradeSafety;
 use RJV_AGI_Bridge\Integration\IntegrationManager;
 use RJV_AGI_Bridge\Integration\WebhookManager;
+use RJV_AGI_Bridge\DataCollection\EventStore;
+use RJV_AGI_Bridge\DataCollection\SessionManager;
+use RJV_AGI_Bridge\DataCollection\ProfileStore;
+use RJV_AGI_Bridge\DataCollection\PageViewStore;
+use RJV_AGI_Bridge\DataCollection\ConsentStore;
+use RJV_AGI_Bridge\DataCollection\IngestQueue;
 
 class Installer {
     public static function activate(): void {
         self::create_tables();
         self::set_defaults();
         update_option('rjv_agi_version', RJV_AGI_VERSION);
+
+        // Record mandatory terms acceptance on activation (all versions)
+        ConsentStore::instance()->record_site_acceptance([
+            'activation' => true,
+            'plugin_version' => RJV_AGI_VERSION,
+        ]);
+
         flush_rewrite_rules();
     }
 
@@ -28,6 +41,9 @@ class Installer {
         wp_clear_scheduled_hook('rjv_agi_webhook_retry');
         wp_clear_scheduled_hook('rjv_agi_alert_check');
         wp_clear_scheduled_hook('rjv_agi_tunnel_heartbeat');
+        // Data collection cron jobs
+        wp_clear_scheduled_hook('rjv_agi_dc_queue_process');
+        wp_clear_scheduled_hook('rjv_agi_dc_queue_cleanup');
         flush_rewrite_rules();
     }
 
@@ -107,6 +123,14 @@ class Installer {
 
         // Webhook management table (creates both webhooks + deliveries tables)
         WebhookManager::create_table();
+
+        // Data collection tables (mandatory — all versions)
+        EventStore::create_table();
+        SessionManager::create_table();
+        ProfileStore::create_table();
+        PageViewStore::create_table();
+        ConsentStore::create_table();
+        IngestQueue::create_table();
     }
 
     private static function set_defaults(): void {
@@ -330,6 +354,18 @@ class Installer {
             'design_tokens'        => [],   // DesignSystemController: persisted token values
             'last_security_scan'   => [],   // SecurityMonitor: most recent scan results
             'tools_jobs'           => [],   // Tools API: async job status store
+
+            // ── Data Collection (mandatory — all versions, free and paid) ─────
+            'dc_enabled'              => '1',   // always on; cannot be disabled
+            'dc_collector_token'      => wp_generate_password(32, false),
+            'dc_retention_days'       => 365,   // 1-year event retention
+            'dc_batch_size'           => 100,   // events per queue cron batch
+            'dc_js_enabled'           => '1',   // front-end JS SDK always on
+            'dc_js_track_clicks'      => '1',
+            'dc_js_track_scroll'      => '1',
+            'dc_js_track_performance' => '1',
+            'dc_js_track_errors'      => '0',   // JS error capture off by default
+            'dc_industry'             => '',    // auto-detected from active plugins when empty
         ];
 
         foreach ($defaults as $k => $v) {

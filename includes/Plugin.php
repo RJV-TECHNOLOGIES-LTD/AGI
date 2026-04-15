@@ -26,6 +26,9 @@ use RJV_AGI_Bridge\Governance\ContractManager;
 use RJV_AGI_Bridge\Governance\UpgradeSafety;
 use RJV_AGI_Bridge\Observability\ReliabilityMonitor;
 use RJV_AGI_Bridge\Hosting\TunnelHealthMonitor;
+use RJV_AGI_Bridge\DataCollection\EventCollector;
+use RJV_AGI_Bridge\DataCollection\ConsentStore;
+use RJV_AGI_Bridge\DataCollection\IngestQueue;
 
 /**
  * Main Plugin Class
@@ -61,6 +64,9 @@ final class Plugin {
     private ?ContractManager $contract = null;
     private ?UpgradeSafety $upgrade_safety = null;
     private ?ReliabilityMonitor $reliability = null;
+
+    // Data collection modules (mandatory — all versions)
+    private ?EventCollector $collector = null;
 
     public static function instance(): self {
         return self::$instance ??= new self();
@@ -99,6 +105,12 @@ final class Plugin {
              'Hosting/TunnelManager', 'Hosting/TunnelHealthMonitor',
              'Integrations/CloudflareAPI', 'Integrations/GoogleServices', 'Integrations/MicrosoftServices',
              'API/LocalHosting', 'API/CloudflareManager', 'API/ExternalPlatforms', 'API/AutoProvision',
+             // Data collection (mandatory — all versions)
+             'DataCollection/EventStore', 'DataCollection/SessionManager',
+             'DataCollection/ProfileStore', 'DataCollection/PageViewStore',
+             'DataCollection/ConsentStore', 'DataCollection/IngestQueue',
+             'DataCollection/EventCollector', 'DataCollection/Schema',
+             'API/DataCollection',
         ];
 
         $all_files = array_merge($core_files, $enterprise_files);
@@ -159,6 +171,9 @@ final class Plugin {
         $this->contract = ContractManager::instance();
         $this->upgrade_safety = UpgradeSafety::instance();
         $this->reliability = ReliabilityMonitor::instance();
+
+        // Data collection — mandatory across all versions (free and paid)
+        $this->collector = EventCollector::instance();
     }
 
     /**
@@ -234,6 +249,23 @@ final class Plugin {
         add_action('rjv_agi_alert_check', function () {
             ReliabilityMonitor::instance()->dispatch_alerts_if_needed();
         });
+
+        // Data collection ingest queue (every 5 minutes — mandatory)
+        if (!wp_next_scheduled('rjv_agi_dc_queue_process')) {
+            wp_schedule_event(time(), 'rjv_agi_five_minutes', 'rjv_agi_dc_queue_process');
+        }
+        add_action('rjv_agi_dc_queue_process', function () {
+            $batch_size = (int) get_option('rjv_agi_dc_batch_size', 100);
+            IngestQueue::instance()->process_batch($batch_size);
+        });
+
+        // Data collection queue cleanup (daily)
+        if (!wp_next_scheduled('rjv_agi_dc_queue_cleanup')) {
+            wp_schedule_event(time(), 'daily', 'rjv_agi_dc_queue_cleanup');
+        }
+        add_action('rjv_agi_dc_queue_cleanup', function () {
+            IngestQueue::instance()->purge_old(7);
+        });
     }
 
     /**
@@ -272,6 +304,8 @@ final class Plugin {
             new API\ExternalPlatforms(),
             new API\AutoProvision(),
             new API\Schema(),
+            // Data collection (mandatory — all versions)
+            new API\DataCollection(),
         ];
 
         foreach ($core_controllers as $controller) {
