@@ -17,6 +17,12 @@ final class CapabilityGate {
     private PlatformConnector $connector;
     private array $capability_map;
 
+    /**
+     * Goal actions that do not mutate WordPress.
+     * Every other action must be present in build_capability_map(); unmapped actions are denied.
+     */
+    private const INERT_ACTIONS = ['wait', 'conditional'];
+
     public static function instance(): self {
         return self::$instance ??= new self();
     }
@@ -30,9 +36,18 @@ final class CapabilityGate {
      * Check if an action is allowed based on current capabilities
      */
     public function can(string $action, array $context = []): bool {
+        if (in_array($action, self::INERT_ACTIONS, true)) {
+            return true;
+        }
+
         $capability = $this->map_action_to_capability($action);
         if ($capability === null) {
-            return true; // Unknown actions are allowed by default
+            AuditLog::log('capability_denied', 'gate', 0, [
+                'action' => $action,
+                'capability' => null,
+                'reason' => 'unmapped_action',
+            ], 1, 'error');
+            return false;
         }
 
         if (!$this->has_capability($capability)) {

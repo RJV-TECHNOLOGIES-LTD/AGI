@@ -46,7 +46,16 @@ final class PolicyEngine {
     public function update_policies(array $policies): array {
         $defaults = $this->defaults();
         $validated = $defaults;
-        $validated['enforcement_enabled'] = (bool) ($policies['enforcement_enabled'] ?? $defaults['enforcement_enabled']);
+        // Enforcement is not a kill switch. A request to turn it off is rejected
+        // and the stored policy stays enforced.
+        $disableAttempted = array_key_exists('enforcement_enabled', $policies)
+            && $policies['enforcement_enabled'] !== true;
+        if ($disableAttempted) {
+            AuditLog::log('policy_enforcement_disable_denied', 'governance', 0, [
+                'reason' => 'enforcement_cannot_be_disabled',
+            ], 2, 'error');
+        }
+        $validated['enforcement_enabled'] = true;
 
         foreach (['deny_routes', 'approval_routes', 'approval_methods', 'bypass_routes'] as $listKey) {
             $value = $policies[$listKey] ?? $defaults[$listKey];
@@ -67,7 +76,11 @@ final class PolicyEngine {
         $validated['rules'] = $this->sanitize_rules((array) ($policies['rules'] ?? []));
 
         TenantIsolation::instance()->set_option('rjv_agi_policy_rules', $validated);
-        return ['success' => true, 'policies' => $validated];
+        $result = ['success' => true, 'policies' => $validated];
+        if ($disableAttempted) {
+            $result['enforcement_disable_rejected'] = true;
+        }
+        return $result;
     }
 
     public function evaluate(\WP_REST_Request $request): array {
@@ -78,9 +91,9 @@ final class PolicyEngine {
         }
 
         $policies = $this->get_policies();
-        if (($policies['enforcement_enabled'] ?? true) !== true) {
-            return ['allowed' => true, 'requires_approval' => false, 'policy' => 'disabled'];
-        }
+        // enforcement_enabled is ignored. A stored false value must not
+        // produce an allow-all decision; deny, approval, and bypass rules
+        // still apply.
 
         if ($this->matches_any($route, $policies['bypass_routes'] ?? [])) {
             return ['allowed' => true, 'requires_approval' => false, 'policy' => 'bypass'];

@@ -19,6 +19,18 @@ if (!defined('RJV_AGI_LOG_TABLE')) {
     define('RJV_AGI_LOG_TABLE', 'rjv_agi_audit_log');
 }
 
+if (!defined('HOUR_IN_SECONDS')) {
+    define('HOUR_IN_SECONDS', 3600);
+}
+
+if (!defined('DAY_IN_SECONDS')) {
+    define('DAY_IN_SECONDS', 86400);
+}
+
+if (!defined('ARRAY_A')) {
+    define('ARRAY_A', 'ARRAY_A');
+}
+
 if (!defined('AUTH_KEY')) {
     define('AUTH_KEY', 'unit-test-auth-key-not-for-production');
 }
@@ -130,6 +142,30 @@ if (!function_exists('wp_parse_url')) {
         return parse_url($url, $component);
     }
 }
+
+$GLOBALS['_transients'] = [];
+
+if (!function_exists('get_transient')) {
+    function get_transient(string $transient): mixed {
+        return $GLOBALS['_transients'][$transient] ?? false;
+    }
+}
+
+if (!function_exists('set_transient')) {
+    function set_transient(string $transient, mixed $value, int $expiration = 0): bool {
+        $GLOBALS['_transients'][$transient] = $value;
+        return true;
+    }
+}
+
+if (!function_exists('delete_transient')) {
+    function delete_transient(string $transient): bool {
+        unset($GLOBALS['_transients'][$transient]);
+        return true;
+    }
+}
+
+require_once __DIR__ . '/support/wp-test-doubles.php';
 
 // ── Autoloader ────────────────────────────────────────────────────────────────
 

@@ -241,6 +241,20 @@ final class ApprovalWorkflow {
             'action_type' => $item['action_type'],
         ], 2);
 
+        // Policy handoffs stay approved until the one-shot REST override consumes
+        // them. execute() would mark them executed before the caller re-submits,
+        // which would make the approval unusable and previously allowed reuse of
+        // status=executed.
+        if ($auto_execute && $this->is_policy_handoff((string) $item['action_type'])) {
+            return [
+                'success' => true,
+                'approval_id' => $approval_id,
+                'status' => 'approved',
+                'handoff_required' => true,
+                'message' => 'Request approved. Re-submit the original request with X-RJV-Approval-ID.',
+            ];
+        }
+
         // Execute if requested
         if ($auto_execute) {
             return $this->execute($approval_id);
@@ -360,6 +374,36 @@ final class ApprovalWorkflow {
             $row['preview_data'] = json_decode($row['preview_data'], true);
             return $row;
         }, $results);
+    }
+
+    /**
+     * Policy approval types that authorize a single REST replay, not an
+     * in-place execution.
+     */
+    public function is_policy_handoff(string $action_type): bool {
+        return in_array($action_type, ['policy_guardrail_request', 'policy_escalation_request'], true);
+    }
+
+    /**
+     * Atomically move an approved policy override to executed.
+     * Returns true only for the call that wins the transition.
+     */
+    public function consume_approved_override(int $approval_id): bool {
+        global $wpdb;
+
+        $updated = $wpdb->update(
+            $this->table_name,
+            [
+                'status' => 'executed',
+                'executed_at' => current_time('mysql', true),
+            ],
+            [
+                'id' => $approval_id,
+                'status' => 'approved',
+            ]
+        );
+
+        return (int) $updated === 1;
     }
 
     /**
