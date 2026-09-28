@@ -904,6 +904,9 @@ final class Plugin {
                 'route' => $route,
                 'method' => $request->get_method(),
                 'params' => $request->get_json_params(),
+                'query' => $request->get_query_params(),
+                'url_params' => $request->get_url_params(),
+                'request_hash' => $this->request_binding_hash($request),
                 'trace_id' => $trace_id,
                 'request_id' => $request_id,
                 'rule_id' => (string) ($policy['rule_id'] ?? ''),
@@ -1002,17 +1005,23 @@ final class Plugin {
             return false;
         }
 
-        $item = ApprovalWorkflow::instance()->get_item($approval_id);
+        $workflow = ApprovalWorkflow::instance();
+        $item = $workflow->get_item($approval_id);
         if (!$item) {
+            $this->audit_approval_override_denied($approval_id, $request, $route, 'not_found', '');
             return false;
         }
 
-        if (!in_array((string) ($item['action_type'] ?? ''), ['policy_guardrail_request', 'policy_escalation_request'], true)) {
+        $actionType = (string) ($item['action_type'] ?? '');
+        if (!$workflow->is_policy_handoff($actionType)) {
+            $this->audit_approval_override_denied($approval_id, $request, $route, 'wrong_action_type', (string) ($item['status'] ?? ''));
             return false;
         }
 
+        // executed is not reusable. Only approved can authorize, and only once.
         $status = (string) ($item['status'] ?? '');
-        if (!in_array($status, ['approved', 'executed'], true)) {
+        if ($status !== 'approved') {
+            $this->audit_approval_override_denied($approval_id, $request, $route, 'status_not_approved', $status);
             return false;
         }
 
@@ -1020,8 +1029,87 @@ final class Plugin {
             ? $item['action_data']
             : (json_decode((string) ($item['action_data'] ?? ''), true) ?: []);
 
-        return (string) ($actionData['route'] ?? '') === $route
-            && strtoupper((string) ($actionData['method'] ?? '')) === strtoupper($request->get_method());
+        if ((string) ($actionData['route'] ?? '') !== $route) {
+            $this->audit_approval_override_denied($approval_id, $request, $route, 'route_mismatch', $status);
+            return false;
+        }
+
+        if (strtoupper((string) ($actionData['method'] ?? '')) !== strtoupper($request->get_method())) {
+            $this->audit_approval_override_denied($approval_id, $request, $route, 'method_mismatch', $status);
+            return false;
+        }
+
+        $storedHash = (string) ($actionData['request_hash'] ?? '');
+        $liveHash = $this->request_binding_hash($request);
+        if ($storedHash === '' || !hash_equals($storedHash, $liveHash)) {
+            $this->audit_approval_override_denied(
+                $approval_id,
+                $request,
+                $route,
+                $storedHash === '' ? 'missing_request_hash' : 'body_mismatch',
+                $status
+            );
+            return false;
+        }
+
+        if (!$workflow->consume_approved_override($approval_id)) {
+            $this->audit_approval_override_denied($approval_id, $request, $route, 'already_consumed', $status);
+            return false;
+        }
+
+        return true;
+    }
+
+    private function audit_approval_override_denied(
+        int $approval_id,
+        \WP_REST_Request $request,
+        string $route,
+        string $reason,
+        string $status
+    ): void {
+        AuditLog::log('approval_override_denied', 'approval', $approval_id, [
+            'reason' => $reason,
+            'status' => $status,
+            'route' => $route,
+            'method' => strtoupper($request->get_method()),
+        ], 2, 'error');
+    }
+
+    /**
+     * Canonical SHA-256 of the request body and parameters.
+     * Object key order is normalized; list order is preserved.
+     */
+    private function request_binding_hash(\WP_REST_Request $request): string {
+        $material = [
+            'json' => $this->canonicalize_binding($request->get_json_params()),
+            'body' => $this->canonicalize_binding($request->get_body_params()),
+            'query' => $this->canonicalize_binding($request->get_query_params()),
+            'url' => $this->canonicalize_binding($request->get_url_params()),
+        ];
+        $encoded = wp_json_encode($material, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return hash('sha256', $encoded === false ? '' : $encoded);
+    }
+
+    private function canonicalize_binding(mixed $value): mixed {
+        if (is_object($value)) {
+            $value = get_object_vars($value);
+        }
+        if (!is_array($value)) {
+            if (is_bool($value) || is_int($value) || is_float($value) || is_string($value) || $value === null) {
+                return $value;
+            }
+            return (string) $value;
+        }
+        if ($value === [] || array_is_list($value)) {
+            return array_map(fn($item) => $this->canonicalize_binding($item), $value);
+        }
+
+        ksort($value);
+        $sorted = [];
+        foreach ($value as $key => $item) {
+            $sorted[(string) $key] = $this->canonicalize_binding($item);
+        }
+        return $sorted;
     }
 
     private function mandatory_approval_requirement(\WP_REST_Request $request, string $route): ?array {

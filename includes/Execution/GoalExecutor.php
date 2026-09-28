@@ -86,13 +86,17 @@ final class GoalExecutor {
                     'action_type' => (string) ($action['type'] ?? ''),
                 ], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id]);
 
-                // Check if action is permitted
-                if (!$this->gate->can($action['type'], $action)) {
+                // Check if action is permitted before any rollback snapshot is kept.
+                // A denied action has not mutated WordPress, so its checkpoint must
+                // not be restored (restore would itself write).
+                $actionType = (string) ($action['type'] ?? '');
+                if (!$this->gate->can($actionType, $action)) {
                     $failed_at = $index;
+                    unset($checkpoints[$index]);
                     $results[$index] = [
                         'success' => false,
                         'error' => 'Action not permitted',
-                        'action' => $action['type'],
+                        'action' => $actionType,
                     ];
                     ExecutionLedger::instance()->append_event($executionId, 'action_denied', $results[$index], ['entity_type' => 'goal', 'entity_id' => (string) $goal_id, 'status' => 'failed']);
                     break;
@@ -535,8 +539,18 @@ final class GoalExecutor {
         $satisfied = $this->evaluate_condition($condition);
         $action = $satisfied ? $then_action : $else_action;
 
-        if ($action === null) {
+        if ($action === null || !is_array($action)) {
             return ['success' => true, 'condition_result' => $satisfied, 'action_taken' => 'none'];
+        }
+
+        $nestedType = (string) ($action['type'] ?? '');
+        if (!$this->gate->can($nestedType, $action)) {
+            return [
+                'success' => false,
+                'error' => 'Action not permitted',
+                'action' => $nestedType,
+                'condition_result' => $satisfied,
+            ];
         }
 
         $result = $this->execute_action($action);
